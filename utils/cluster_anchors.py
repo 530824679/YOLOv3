@@ -126,19 +126,15 @@ def plot_data(data, out, k, index):
 
 if __name__ == '__main__':
     path = 'D:\\BaiduNetdiskDownload\\VOC2028\\VOC2028\\Annotations'
-    cluster_num = 5
+    cluster_num = 9
 
     data = load_dataset(path)
     anchors, cluster_index = kmeans(data, cluster_num)
     anchors = anchors.astype('int').tolist()
-    anchors = sorted(anchors, key=lambda x: x[0] * x[1])
+    anchors = np.array(sorted(anchors, key=lambda x: x[0] * x[1]))
 
     print('Boxes:')
-    print(np.array(anchors))
+    print(anchors)
     print("Accuracy: {:.2f}%".format(avg_iou(data, anchors) * 100))
-
-    ratios = np.around(anchors[:, 0] / anchors[:, 1], decimals=2).tolist()
-    print("Before Sort Ratios:\n {}".format(ratios))
-    print("After Sort Ratios:\n {}".format(sorted(ratios)))
 
     plot_data(data, anchors, cluster_num, cluster_index)

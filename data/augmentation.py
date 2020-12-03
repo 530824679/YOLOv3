@@ -25,6 +25,35 @@ def random_horizontal_flip(image, bboxes):
 
     return image, bboxes
 
+def letterbox_resize(image, bboxes, new_height, new_width, interp=0):
+    """
+    Resize the image and correct the bbox accordingly.
+    :param image: BGR image data shape is [height, width, channel]
+    :param bboxes: bounding box shape is [num, 4]
+    :param new_height: new image height
+    :param new_width: new image width
+    :param interp:
+    :return: result
+    """
+    origin_height, origin_width = image.shape[:2]
+    resize_ratio = min(new_width / origin_width, new_height / origin_height)
+    resize_width = int(resize_ratio * origin_width)
+    resize_height = int(resize_ratio * origin_height)
+
+    image = cv2.resize(image, (resize_width, resize_height), interpolation=interp)
+    image_padded = np.full((new_height, new_width, 3), 128, np.uint8)
+
+    dw = int((new_width - resize_width) / 2)
+    dh = int((new_height - resize_height) / 2)
+
+    image_padded[dh:resize_height + dh, dw:resize_width + dw, :] = image
+
+    # xmin, xmax, ymin, ymax
+    bboxes[:, [0, 2]] = bboxes[:, [0, 2]] * resize_ratio + dw
+    bboxes[:, [1, 3]] = bboxes[:, [1, 3]] * resize_ratio + dh
+
+    return image_padded, bboxes
+
 def random_vertical_flip(image, bboxes):
     """
     Randomly vertical flip the image and correct the box

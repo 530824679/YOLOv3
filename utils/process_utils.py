@@ -64,14 +64,14 @@ def bboxes_cut(bbox_min_max, bboxes):
     invalid_mask = np.logical_or((bboxes[:, 0] > bboxes[:, 2]), (bboxes[:, 1] > bboxes[:, 3]))
     return invalid_mask
 
-def bboxes_sort(coords, scores, classes, top_k=400):
+def bboxes_sort(coords, scores, classes, top_k=150):
     index = np.argsort(-scores)
     classes = classes[index][:top_k]
     scores = scores[index][:top_k]
     coords = coords[index][:top_k]
     return coords, scores, classes
 
-def non_maximum_suppression(bboxes, scores, classes, iou_threshold=0.5):
+def non_maximum_suppression(bboxes, scores, classes, iou_threshold=0.45):
     """
     calculate the non-maximum suppression to eliminate the overlapped box
     :param classes: shape is [num, 1] classes
@@ -139,7 +139,7 @@ def soft_non_maximum_suppression(classes, scores, bboxes, sigma=0.3):
 
     return best_results
 
-def postpreocess(bboxes, input_size, origin_size, score_threshold=0.5):
+def postpreocess(bboxes, input_size, origin_size, score_threshold=0.01):
     """
     The result of network prediction is processed and filtered bounding boxes
     :param bboxes: predict result shape is [num, 6] x, y, w, h, score, class

@@ -19,32 +19,26 @@ import tensorflow as tf
 from xml.etree import ElementTree as ET
 from cfg.config import path_params, model_params, classes_map
 from utils.process_utils import *
+from data.augmentation import *
 
 class Dataset(object):
     def __init__(self):
         self.data_path = path_params['data_path']
-        self.image_height = model_params['image_height']
-        self.image_width = model_params['image_width']
+        self.input_height = model_params['input_height']
+        self.input_width = model_params['input_width']
         self.iou_threshold = model_params['iou_threshold']
         self.strides = model_params['strides']
         self.anchors = model_params['anchors']
         self.anchor_per_scale = model_params['anchor_per_scale']
         self.class_num = len(model_params['classes'])
         self.max_bbox_per_scale = model_params['max_bbox_per_scale']
-        self.feature_map_sizes = [np.array([self.image_height, self.image_width]) // stride for stride in self.strides]
+        self.feature_map_sizes = [np.array([self.input_height, self.input_width]) // stride for stride in self.strides]
 
     def load_image(self, image_num):
         image_path = os.path.join(self.data_path, 'JPEGImages', image_num + '.jpg')
         if not os.path.exists(image_path):
             raise KeyError("%s does not exist ... " %image_path)
         image = cv2.imread(image_path)
-
-        self.h_ratio = 1.0 * self.image_height / image.shape[0]
-        self.w_ratio = 1.0 * self.image_width / image.shape[1]
-
-        image = cv2.resize(image, (self.image_height, self.image_width), interpolation=cv2.INTER_LINEAR)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
-        image = image / 255.0 * 2 - 1
 
         return image
 
@@ -66,16 +60,10 @@ class Dataset(object):
             xmax = bndbox.find('xmax').text
             ymax = bndbox.find('ymax').text
 
-            # 将原始样本的标定转换为resize后的图片的标定,按照等比例转换的方式,从0开始索引
-            x1 = max(min(float(xmin) * self.w_ratio, self.image_width - 1), 0)
-            y1 = max(min(float(ymin) * self.h_ratio, self.image_height - 1), 0)
-            x2 = max(min(float(xmax) * self.w_ratio, self.image_width - 1), 0)
-            y2 = max(min(float(ymax) * self.h_ratio, self.image_height - 1), 0)
-
             # 将类别由字符串转换为对应的int数
             class_index = self.cls_type_to_id(object.find('name').text.lower().strip())
 
-            box = [x1, y1, x2, y2, class_index]
+            box = [xmin, ymin, xmax, ymax, class_index]
             bboxes.append(box)
 
         return np.array(bboxes)
@@ -86,6 +74,35 @@ class Dataset(object):
             print("class is %s", type)
             return -1
         return classes_map[type]
+
+    def preprocess_data(self, image, boxes, input_height, input_width):
+        # labels 去除空标签
+        valid = (np.sum(boxes, axis=-1) > 0).tolist()
+        boxes = boxes[valid]
+
+        # random color jittering
+        image = random_color_distort(image)
+
+        # random color jittering
+        image, boxes = random_expand(image, boxes)
+
+        # random cropping
+        image, boxes = random_crop(image, boxes)
+
+        # random translate
+        image, boxes = random_translate(image, boxes)
+
+        # random horizontal flip
+        image, boxes = random_horizontal_flip(image, boxes)
+
+        image, boxes = letterbox_resize(image, boxes, input_height, input_width)
+
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
+        image = image / 255.
+
+        y_true_13, y_true_26, y_true_52 = self.preprocess_true_boxes(boxes, input_height, input_width, self.anchors, self.class_num)
+
+        return image, y_true_13, y_true_26, y_true_52
 
     def preprocess_true_boxes(self, labels, input_height, input_width, anchors, num_classes):
         """
@@ -109,6 +126,7 @@ class Dataset(object):
         y_true_13 = np.zeros(shape=[feature_map_sizes[0][0], feature_map_sizes[0][1], 3, 5 + num_classes], dtype=np.float32)
         y_true_26 = np.zeros(shape=[feature_map_sizes[1][0], feature_map_sizes[1][1], 3, 5 + num_classes], dtype=np.float32)
         y_true_52 = np.zeros(shape=[feature_map_sizes[2][0], feature_map_sizes[2][1], 3, 5 + num_classes], dtype=np.float32)
+
         y_true = [y_true_13, y_true_26, y_true_52]
 
         # convert boxes from (min_x, min_y, max_x, max_y) to (x, y, w, h)
@@ -140,22 +158,28 @@ class Dataset(object):
         # Find best anchor for each true box [N]
         best_anchor = np.argmax(iou, axis=-1)
 
-        for t, n in enumerate(best_anchor):
-            for l in range(num_layers):
-                if n not in anchor_mask[l]: continue
-                i = np.floor(true_boxes[t, 0] / input_shape[0] * feature_map_sizes[l][0]).astype('int32')
-                j = np.floor(true_boxes[t, 1] / input_shape[1] * feature_map_sizes[l][1]).astype('int32')
-                k = anchor_mask[l].index(n)
-                c = labels[t][4].astype('int32')
-                # smooth labels
-                onehot = np.zeros(self.class_num, dtype=np.float)
-                onehot[c] = 1.0
-                uniform_distribution = np.full(self.class_num, 1.0 / self.class_num)
-                deta = 0.01
-                smooth_onehot = onehot * (1 - deta) + deta * uniform_distribution
+        ratio_dict = {1.: 8., 2.: 16., 3.: 32.}
+        for i, idx in enumerate(best_anchor):
+            # idx: 0,1,2 ==> 2; 3,4,5 ==> 1; 6,7,8 ==> 0
+            feature_map_group = 2 - idx // 3
+            # scale ratio: 0,1,2 ==> 8; 3,4,5 ==> 16; 6,7,8 ==> 32
+            ratio = ratio_dict[np.ceil((idx + 1) / 3.)]
 
-                y_true[l][j, i, k, 0:4] = true_boxes[t, 0:4]
-                y_true[l][j, i, k, 4] = 1
-                y_true[l][j, i, k, 5:] = smooth_onehot
+            i = int(np.floor(true_boxes[i, 0] / ratio))
+            j = int(np.floor(true_boxes[i, 1] / ratio))
+            k = anchor_mask[feature_map_group].index(idx)
+            c = labels[i][4].astype('int32')
+            print(feature_map_group, '|', j, i, k, c)
+
+            # smooth labels
+            onehot = np.zeros(self.class_num, dtype=np.float)
+            onehot[c] = 1.0
+            uniform_distribution = np.full(self.class_num, 1.0 / self.class_num)
+            deta = 0.01
+            smooth_onehot = onehot * (1 - deta) + deta * uniform_distribution
+
+            y_true[feature_map_group][j, i, k, 0:4] = true_boxes[i, 0:4]
+            y_true[feature_map_group][j, i, k, 4] = 1
+            y_true[feature_map_group][j, i, k, 5:] = smooth_onehot
 
         return y_true_13, y_true_26, y_true_52

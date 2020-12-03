@@ -12,7 +12,7 @@ path_params = {
     'data_path': '/home/chenwei/HDD/livox_dl/LIVOX',
     'checkpoints_dir': './checkpoints',
     'logs_dir': './logs',
-    'tfrecord_dir': '/home/chenwei/HDD/livox_dl/LIVOX/tfrecord',
+    'tfrecord_dir': './tfrecord',
     'checkpoints_name': 'model.ckpt',
     'train_tfrecord_name': 'train.tfrecord',
     'test_tfrecord_name': 'test.tfrecord',
@@ -20,22 +20,21 @@ path_params = {
 }
 
 model_params = {
-    'image_height': 416,                                # 图片高度
-    'image_width': 416,                                 # 图片宽度
+    'input_height': 416,                                # 图片高度
+    'input_width': 416,                                 # 图片宽度
     'channels': 3,                                      # 输入图片通道数
-    'anchors': [[10,13], [16,30], [33,23],
-               [30,61], [62,45], [59,119],
-               [116,90], [156,198], [373,326]],
+    'anchors': [[11,13], [15,17], [17,21],
+               [22,25], [27,32], [37,43],
+               [57,65], [104,121], [229,266]],
     'classes': ['person', 'hat'],  # 类别
     'anchor_per_scale': 3,                              # 每个尺度的anchor个数
-    'strides': [8, 16, 32],                             # 不同尺度的步长
     'upsample_method': "resize",                        # 上采样的方式
     'iou_threshold': 0.5,
     'max_bbox_per_scale': 150,
-    'class_scale': 1.0,
-    'object_scale': 5.0,
-    'noobject_scale': 1.0,
-    'coord_scale': 1.0
+    'batch_norm_decay': 0.99,  # decay in bn ops
+    'weight_decay': 5e-4,  # l2 weight decay
+    'global_step': 0,  # used when resuming training
+    'warm_up_epoch': 3
 }
 
 solver_params = {
@@ -45,7 +44,7 @@ solver_params = {
     'decay_rate': 0.1,              #衰变率
     'staircase': True,
     'batch_size': 8,                # 每批次输入的数据个数
-    'max_iter': 100000,             # 训练的最大迭代次数
+    'total_epoches': 100000,        # 训练的最大迭代次数
     'save_step': 1000,              # 权重保存间隔
     'log_step': 1000,               # 日志保存间隔
     'display_step': 100,            # 显示打印间隔
