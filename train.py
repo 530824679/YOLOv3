@@ -76,13 +76,13 @@ def train():
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(update_ops):
         # 采用的优化方法是随机梯度下降
-        train_op = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9).minimize(loss[0] + l2_loss, global_step=global_step)
+        # train_op = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9).minimize(loss[0] + l2_loss, global_step=global_step)
 
-        # optimizer = tf.train.MomentumOptimizer(learning_rate, momentum=0.9)
-        # gvs = optimizer.compute_gradients(loss[0] + l2_loss)
-        # clip_grad_var = [gv if gv[0] is None else [
-        #     tf.clip_by_norm(gv[0], 100.), gv[1]] for gv in gvs]
-        # train_op = optimizer.apply_gradients(clip_grad_var, global_step=global_step)
+        optimizer = tf.train.MomentumOptimizer(learning_rate, momentum=0.9)
+        gvs = optimizer.compute_gradients(loss[0] + l2_loss)
+        clip_grad_var = [gv if gv[0] is None else [
+            tf.clip_by_norm(gv[0], 100.), gv[1]] for gv in gvs]
+        train_op = optimizer.apply_gradients(clip_grad_var, global_step=global_step)
 
     # 模型保存
     save_variable = tf.global_variables()
