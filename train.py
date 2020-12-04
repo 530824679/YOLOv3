@@ -54,9 +54,10 @@ def train():
     l2_loss = tf.losses.get_regularization_loss()
 
     tf.summary.scalar('total_loss', loss[0])
-    tf.summary.scalar('loss_iou', loss[1])
-    tf.summary.scalar('loss_conf', loss[2])
-    tf.summary.scalar('loss_class', loss[3])
+    tf.summary.scalar('loss_xy', loss[1])
+    tf.summary.scalar('loss_wh', loss[2])
+    tf.summary.scalar('loss_conf', loss[3])
+    tf.summary.scalar('loss_class', loss[4])
     tf.summary.scalar('loss_l2', l2_loss)
     tf.summary.scalar('loss_ratio', l2_loss / loss[0])
 
@@ -109,13 +110,13 @@ def train():
         summary_writer.add_graph(sess.graph)
 
         for epoch in range(start_step + 1, solver_params['total_epoches']):
-            _, summary_, loss_, loss_iou_, confs_loss_, class_loss_, global_step_, lr = sess.run(
-                [train_op, summary_op, loss[0], loss[1], loss[2], loss[3], global_step,
+            _, summary_, loss_, loss_xy_, loss_wh_, confs_loss_, class_loss_, global_step_, lr = sess.run(
+                [train_op, summary_op, loss[0], loss[1], loss[2],loss[3], loss[4], global_step,
                  learning_rate])
 
             print(
-                "Epoch: {}, global_step: {}, lr: {:.8f}, total_loss: {:.3f}, loss_iou: {:.3f}, confs_loss: {:.3f}, class_loss: {:.3f}".format(
-                    epoch, global_step_, lr, loss_, loss_iou_, confs_loss_, class_loss_))
+                "Epoch: {}, global_step: {}, lr: {:.8f}, total_loss: {:.3f}, loss_xy: {:.3f}, loss_wh: {:.3f}, confs_loss: {:.3f}, class_loss: {:.3f}".format(
+                    epoch, global_step_, lr, loss_, loss_xy_, loss_wh_, confs_loss_, class_loss_))
 
             if epoch % solver_params['save_step'] == 0 and epoch > 0:
                 save_path = saver.save(sess, os.path.join(checkpoint_dir, checkpoints_name), global_step=epoch)
