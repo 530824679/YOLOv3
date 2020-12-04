@@ -34,19 +34,14 @@ def train():
     # 解析得到训练样本以及标注
     data = tfrecord.TFRecord()
     train_tfrecord = os.path.join(tfrecord_dir, tfrecord_name)
-    image_batch, label_batch = data.create_dataset(train_tfrecord)
-
-    # 解析得到训练样本以及标注
-    data = tfrecord.TFRecord()
-    train_tfrecord = os.path.join(tfrecord_dir, tfrecord_name)
     dataset = data.create_dataset(train_tfrecord, batch_size=4, is_shuffle=True)
     iterator = dataset.make_one_shot_iterator()
     inputs, y_true_13, y_true_26, y_true_52 = iterator.get_next()
 
     inputs.set_shape([None, 416, 416, 3])
-    y_true_13.set_shape([None, 13, 13, 3, 6])
-    y_true_26.set_shape([None, 26, 26, 3, 6])
-    y_true_52.set_shape([None, 52, 52, 3, 6])
+    y_true_13.set_shape([None, 13, 13, 3, 7])
+    y_true_26.set_shape([None, 26, 26, 3, 7])
+    y_true_52.set_shape([None, 52, 52, 3, 7])
 
     y_true = [y_true_13, y_true_26, y_true_52]
 
@@ -59,10 +54,9 @@ def train():
     l2_loss = tf.losses.get_regularization_loss()
 
     tf.summary.scalar('total_loss', loss[0])
-    tf.summary.scalar('loss_xy', loss[1])
-    tf.summary.scalar('loss_wh', loss[2])
-    tf.summary.scalar('loss_conf', loss[3])
-    tf.summary.scalar('loss_class', loss[4])
+    tf.summary.scalar('loss_iou', loss[1])
+    tf.summary.scalar('loss_conf', loss[2])
+    tf.summary.scalar('loss_class', loss[3])
     tf.summary.scalar('loss_l2', l2_loss)
     tf.summary.scalar('loss_ratio', l2_loss / loss[0])
 
@@ -81,11 +75,13 @@ def train():
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(update_ops):
         # 采用的优化方法是随机梯度下降
-        optimizer = tf.train.MomentumOptimizer(learning_rate, momentum=0.9)
-        gvs = optimizer.compute_gradients(loss[0] + l2_loss)
-        clip_grad_var = [gv if gv[0] is None else [
-            tf.clip_by_norm(gv[0], 100.), gv[1]] for gv in gvs]
-        train_op = optimizer.apply_gradients(clip_grad_var, global_step=global_step)
+        train_op = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9).minimize(loss[0] + l2_loss, global_step=global_step)
+
+        # optimizer = tf.train.MomentumOptimizer(learning_rate, momentum=0.9)
+        # gvs = optimizer.compute_gradients(loss[0] + l2_loss)
+        # clip_grad_var = [gv if gv[0] is None else [
+        #     tf.clip_by_norm(gv[0], 100.), gv[1]] for gv in gvs]
+        # train_op = optimizer.apply_gradients(clip_grad_var, global_step=global_step)
 
     # 模型保存
     save_variable = tf.global_variables()
@@ -113,13 +109,13 @@ def train():
         summary_writer.add_graph(sess.graph)
 
         for epoch in range(start_step + 1, solver_params['total_epoches']):
-            _, summary_, loss_, xy_loss_, wh_loss_, confs_loss_, class_loss_, global_step_, lr = sess.run(
-                [train_op, summary_op, loss[0], loss[1], loss[2], loss[3], loss[4], global_step,
+            _, summary_, loss_, loss_iou_, confs_loss_, class_loss_, global_step_, lr = sess.run(
+                [train_op, summary_op, loss[0], loss[1], loss[2], loss[3], global_step,
                  learning_rate])
 
             print(
-                "Epoch: {}, global_step: {}, lr: {:.8f}, total_loss: {:.3f}, coord_loss: {:.3f}, confs_loss: {:.3f}, class_loss: {:.3f}".format(
-                    epoch, global_step_, lr, loss_, xy_loss_, wh_loss_, confs_loss_, class_loss_))
+                "Epoch: {}, global_step: {}, lr: {:.8f}, total_loss: {:.3f}, loss_iou: {:.3f}, confs_loss: {:.3f}, class_loss: {:.3f}".format(
+                    epoch, global_step_, lr, loss_, loss_iou_, confs_loss_, class_loss_))
 
             if epoch % solver_params['save_step'] == 0 and epoch > 0:
                 save_path = saver.save(sess, os.path.join(checkpoint_dir, checkpoints_name), global_step=epoch)

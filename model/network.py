@@ -18,13 +18,13 @@ class Network(object):
         self.classes = model_params['classes']
         self.class_num = len(self.classes)
         self.anchors = np.array(model_params['anchors'])
-        self.anchor_per_sacle = model_params['anchor_per_sacle']
+        self.anchor_per_sacle = model_params['anchor_per_scale']
         self.upsample_method = model_params['upsample_method']
 
         self.batch_size = solver_params['batch_size']
         self.input_height = model_params['input_height']
         self.input_width = model_params['input_width']
-        self.input_size = np.array(self.input_height, self.input_width)
+        self.input_size = np.array([self.input_height, self.input_width])
         self.iou_threshold = model_params['iou_threshold']
 
     def darknet53(self, inputs, scope='darknet53'):
@@ -66,47 +66,44 @@ class Network(object):
             return route_1, route_2, input_data
 
     def detect_head(self, route_1, route_2, input_data):
-        input_data = conv2d(input_data, (1, 1, 1024, 512), self.is_train, 'conv52')
-        input_data = conv2d(input_data, (3, 3, 512, 1024), self.is_train, 'conv53')
-        input_data = conv2d(input_data, (1, 1, 1024, 512), self.is_train, 'conv54')
-        input_data = conv2d(input_data, (3, 3, 512, 1024), self.is_train, 'conv55')
-        input_data = conv2d(input_data, (1, 1, 1024, 512), self.is_train, 'conv56')
+        input_data = conv2d(input_data, (1, 1, 1024, 512), self.is_train, scope='conv52')
+        input_data = conv2d(input_data, (3, 3, 512, 1024), self.is_train, scope='conv53')
+        input_data = conv2d(input_data, (1, 1, 1024, 512), self.is_train, scope='conv54')
+        input_data = conv2d(input_data, (3, 3, 512, 1024), self.is_train, scope='conv55')
+        input_data = conv2d(input_data, (1, 1, 1024, 512), self.is_train, scope='conv56')
 
         conv_lobj_branch = conv2d(input_data, (3, 3, 512, 1024), self.is_train, scope='conv_lobj_branch')
-        conv_lbbox = conv2d(conv_lobj_branch, (1, 1, 1024, 3 * (self.class_num + 5)), trainable=self.is_train,
-                            scope='conv_lbbox', activate=False, bn=False)
+        conv_lbbox = conv2d(conv_lobj_branch, (1, 1, 1024, 3 * (self.class_num + 5)), trainable=self.is_train, scope='conv_lbbox', activate=False, bn=False)
 
-        input_data = conv2d(input_data, (1, 1, 512, 256), self.is_train, 'conv57')
+        input_data = conv2d(input_data, (1, 1, 512, 256), self.is_train, scope='conv57')
         input_data = upsample(input_data, scope='upsample0', method=self.upsample_method)
 
         with tf.variable_scope('route_1'):
             input_data = tf.concat([input_data, route_2], axis=-1)
 
-        input_data = conv2d(input_data, (1, 1, 768, 256), self.is_train, 'conv58')
-        input_data = conv2d(input_data, (3, 3, 256, 512), self.is_train, 'conv59')
-        input_data = conv2d(input_data, (1, 1, 512, 256), self.is_train, 'conv60')
-        input_data = conv2d(input_data, (3, 3, 256, 512), self.is_train, 'conv61')
-        input_data = conv2d(input_data, (1, 1, 512, 256), self.is_train, 'conv62')
+        input_data = conv2d(input_data, (1, 1, 768, 256), self.is_train, scope='conv58')
+        input_data = conv2d(input_data, (3, 3, 256, 512), self.is_train, scope='conv59')
+        input_data = conv2d(input_data, (1, 1, 512, 256), self.is_train, scope='conv60')
+        input_data = conv2d(input_data, (3, 3, 256, 512), self.is_train, scope='conv61')
+        input_data = conv2d(input_data, (1, 1, 512, 256), self.is_train, scope='conv62')
 
         conv_mobj_branch = conv2d(input_data, (3, 3, 256, 512), self.is_train, scope='conv_mobj_branch')
-        conv_mbbox = conv2d(conv_mobj_branch, (1, 1, 512, 3 * (self.class_num + 5)), trainable=self.is_train,
-                            scope='conv_mbbox', activate=False, bn=False)
+        conv_mbbox = conv2d(conv_mobj_branch, (1, 1, 512, 3 * (self.class_num + 5)), trainable=self.is_train, scope='conv_mbbox', activate=False, bn=False)
 
-        input_data = conv2d(input_data, (1, 1, 256, 128), self.is_train, 'conv63')
+        input_data = conv2d(input_data, (1, 1, 256, 128), self.is_train, scope='conv63')
         input_data = upsample(input_data, scope='upsample1', method=self.upsample_method)
 
         with tf.variable_scope('route_2'):
             input_data = tf.concat([input_data, route_1], axis=-1)
 
-        input_data = conv2d(input_data, (1, 1, 384, 128), self.is_train, 'conv64')
-        input_data = conv2d(input_data, (3, 3, 128, 256), self.is_train, 'conv65')
-        input_data = conv2d(input_data, (1, 1, 256, 128), self.is_train, 'conv66')
-        input_data = conv2d(input_data, (3, 3, 128, 256), self.is_train, 'conv67')
-        input_data = conv2d(input_data, (1, 1, 256, 128), self.is_train, 'conv68')
+        input_data = conv2d(input_data, (1, 1, 384, 128), self.is_train, scope='conv64')
+        input_data = conv2d(input_data, (3, 3, 128, 256), self.is_train, scope='conv65')
+        input_data = conv2d(input_data, (1, 1, 256, 128), self.is_train, scope='conv66')
+        input_data = conv2d(input_data, (3, 3, 128, 256), self.is_train, scope='conv67')
+        input_data = conv2d(input_data, (1, 1, 256, 128), self.is_train, scope='conv68')
 
         conv_sobj_branch = conv2d(input_data, (3, 3, 128, 256), self.is_train, scope='conv_sobj_branch')
-        conv_sbbox = conv2d(conv_sobj_branch, (1, 1, 256, 3 * (self.class_num + 5)), trainable=self.is_train,
-                            scope='conv_sbbox', activate=False, bn=False)
+        conv_sbbox = conv2d(conv_sobj_branch, (1, 1, 256, 3 * (self.class_num + 5)), trainable=self.is_train, scope='conv_sbbox', activate=False, bn=False)
 
         return conv_lbbox, conv_mbbox, conv_sbbox
 
@@ -119,10 +116,7 @@ class Network(object):
         """
         route_1, route_2, input_data = self.darknet53(inputs, self.is_train)
 
-        try:
-            conv_lbbox, conv_mbbox, conv_sbbox = self.detect_head(route_1, route_2, input_data)
-        except:
-            raise NotImplementedError("Can not build up yolov3 network!")
+        conv_lbbox, conv_mbbox, conv_sbbox = self.detect_head(route_1, route_2, input_data)
 
         return conv_lbbox, conv_mbbox, conv_sbbox
 
@@ -135,7 +129,6 @@ class Network(object):
         :return: 预测层最终的输出 shape=[batch_size, feature_size, feature_size, anchor_per_scale, 5 + num_classes]
         """
         feature_shape = feature_maps.get_shape().as_list()[1:3]
-        batch_size = feature_shape[0]
         ratio = tf.cast(self.input_size / feature_shape, tf.float32)
         anchor_per_scale = self.anchor_per_sacle
 
@@ -143,7 +136,7 @@ class Network(object):
         rescaled_anchors = [(anchor[0] / ratio[1], anchor[1] / ratio[0]) for anchor in anchors]
 
         # 网络输出转化——偏移量、置信度、类别概率
-        feature_maps = tf.reshape(feature_maps, [batch_size, feature_shape[0] * feature_shape[1], anchor_per_scale, self.class_num + 5])
+        feature_maps = tf.reshape(feature_maps, [-1, feature_shape[0], feature_shape[1], anchor_per_scale, self.class_num + 5])
         # 中心坐标相对于该cell左上角的偏移量，sigmoid函数归一化到0-1
         xy_offset = tf.nn.sigmoid(feature_maps[..., 0:2])
         # 相对于anchor的wh比例，通过e指数解码
@@ -183,18 +176,17 @@ class Network(object):
         :param y_logit: function: [feature_map_1, feature_map_2, feature_map_3]
         :param y_true: input y_true by the tf.data pipeline
         '''
-        loss_xy, loss_wh, loss_conf, loss_class = 0., 0., 0., 0.
+        loss_iou, loss_conf, loss_class = 0., 0., 0.
         anchor_group = [self.anchors[6:9], self.anchors[3:6], self.anchors[0:3]]
 
         for i in range(len(y_logit)):
             result = self.loss_layer(y_logit[i], y_true[i], anchor_group[i])
-            loss_xy += result[0]
-            loss_wh += result[1]
+            loss_iou += result[0]
             loss_conf += result[1]
             loss_class += result[2]
-        total_loss = loss_xy + loss_wh + loss_conf + loss_class
+        total_loss = loss_iou + loss_conf + loss_class
 
-        return [total_loss, loss_xy, loss_wh, loss_conf, loss_class]
+        return [total_loss, loss_iou, loss_conf, loss_class]
 
     def loss_layer(self, logits, y_true, anchors):
         '''
@@ -218,7 +210,7 @@ class Network(object):
         valid_true_box_wh = valid_true_boxes[:, 2:4]
 
         # predicts
-        xy_offset, predictions, pred_box_xy, pred_box_wh = self.reorg_layer(logits, self.anchors)
+        xy_offset, predictions, pred_box_xy, pred_box_wh = self.reorg_layer(logits, anchors)
         pred_conf_logits = predictions[:, :, :, :, 4:5]
         pred_prob_logits = predictions[:, :, :, :, 5:]
 
@@ -235,12 +227,12 @@ class Network(object):
 
         # 图像尺寸归一化信息转换为特征图的单元格相对信息
         # shape: [N, 13, 13, 3, 2]  # 坐标反归一化
-        true_xy = y_true[..., 0:2] * feature_size[::-1] - xy_offset
-        pred_xy = pred_box_xy * feature_size[::-1] - xy_offset
+        true_xy = y_true[..., 0:2] * tf.cast(feature_size[::-1], tf.float32) - xy_offset
+        pred_xy = pred_box_xy * tf.cast(feature_size[::-1], tf.float32) - xy_offset
 
         # shape: [N, 13, 13, 3, 2],
-        true_tw_th = y_true[..., 2:4] * feature_size[::-1] / anchors
-        pred_tw_th = pred_box_wh * feature_size[::-1] / anchors
+        true_tw_th = y_true[..., 2:4] * tf.cast(feature_size[::-1], tf.float32) / anchors
+        pred_tw_th = pred_box_wh * tf.cast(feature_size[::-1], tf.float32) / anchors
 
         # for numerical stability 稳定训练, 为0时不对anchors进行缩放, 在模型输出值特别小是e^out_put为0
         true_tw_th = tf.where(condition=tf.equal(true_tw_th, 0), x=tf.ones_like(true_tw_th), y=true_tw_th)
@@ -251,9 +243,11 @@ class Network(object):
 
         # shape: [N, 13, 13, 3, 1]
         box_loss_scale = 2. - y_true[..., 2:3] * y_true[..., 3:4]
-
-        xy_loss = tf.square(true_xy - pred_xy) * object_masks * box_loss_scale
-        wh_loss = tf.square(true_tw_th - pred_tw_th) * object_masks * box_loss_scale
+        pred_xywh = tf.concat([pred_box_xy, pred_box_wh], axis=-1)
+        diou = tf.expand_dims(self.bbox_diou(pred_xywh, object_coords), axis=-1)
+        diou_loss = object_masks * box_loss_scale * (1 - diou)
+        #xy_loss = tf.square(true_xy - pred_xy) * object_masks * box_loss_scale
+        #wh_loss = tf.square(true_tw_th - pred_tw_th) * object_masks * box_loss_scale
 
         # shape: [N, 13, 13, 3, 1]
         conf_pos_mask = object_masks
@@ -274,12 +268,13 @@ class Network(object):
         # shape: [N, 13, 13, 3, 1]
         class_loss = object_masks * tf.nn.sigmoid_cross_entropy_with_logits(labels=label_target, logits=pred_prob_logits)
 
-        xy_loss = tf.reduce_mean(tf.reduce_sum(xy_loss, axis=[1, 2, 3, 4]))
-        wh_loss = tf.reduce_mean(tf.reduce_sum(wh_loss, axis=[1, 2, 3, 4]))
+        #xy_loss = tf.reduce_mean(tf.reduce_sum(xy_loss, axis=[1, 2, 3, 4]))
+        #wh_loss = tf.reduce_mean(tf.reduce_sum(wh_loss, axis=[1, 2, 3, 4]))
+        diou_loss = tf.reduce_mean(tf.reduce_sum(diou_loss, axis=[1, 2, 3, 4]))
         conf_loss = tf.reduce_mean(tf.reduce_sum(conf_loss, axis=[1, 2, 3, 4]))
         class_loss = tf.reduce_mean(tf.reduce_sum(class_loss, axis=[1, 2, 3, 4]))
 
-        return xy_loss, wh_loss, conf_loss, class_loss
+        return diou_loss, conf_loss, class_loss
 
     def broadcast_iou(self, true_box_xy, true_box_wh, pred_box_xy, pred_box_wh):
         # shape:

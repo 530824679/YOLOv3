@@ -21,11 +21,12 @@ def conv2d(inputs, filters_shape, trainable, downsample=False, activate=True, bn
             strides = (1, 2, 2, 1)
             padding = 'VALID'
         else:
+            input_data = inputs
             strides = (1, 1, 1, 1)
             padding = "SAME"
 
-        weight = tf.get_variable(name='weight', dtype=tf.float32, trainable=True, shape=filters_shape, initializer=tf.random_normal_initializer(stddev=0.01))
-        conv = tf.nn.conv2d(input=input_data, filter=weight, strides=strides, padding=padding)
+        weight = tf.get_variable(name=scope+'_weight', dtype=tf.float32, trainable=True, shape=filters_shape, initializer=tf.random_normal_initializer(stddev=0.01))
+        conv = tf.nn.conv2d(input=input_data, filter=weight, strides=strides, padding=padding, name=scope+'_conv')
 
         if bn:
             conv = tf.layers.batch_normalization(conv, beta_initializer=tf.zeros_initializer(),

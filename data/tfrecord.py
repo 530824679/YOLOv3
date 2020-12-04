@@ -12,6 +12,7 @@ import numpy as np
 import tensorflow as tf
 from data.dataset import Dataset
 from cfg.config import path_params, model_params, solver_params, classes_map
+from data.augmentation import *
 
 class TFRecord(object):
     def __init__(self):
@@ -22,21 +23,23 @@ class TFRecord(object):
         self.input_width = model_params['input_width']
         self.input_height = model_params['input_height']
         self.channels = model_params['channels']
-        self.grid_height = model_params['grid_height']
-        self.grid_width = model_params['grid_width']
-        self.class_num = model_params['num_classes']
+        self.class_num = len(model_params['classes'])
         self.batch_size = solver_params['batch_size']
         self.dataset = Dataset()
 
-    # 数值形式的数据,首先转换为string,再转换为int形式进行保存
     def _int64_feature(self, value):
+        if not isinstance(value, list):
+            value = [value]
         return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
 
     def _float_feature(self, value):
+        if not isinstance(value, list):
+            value = [value]
         return tf.train.Feature(float_list=tf.train.FloatList(value=[value]))
 
-    # 数组形式的数据,首先转换为string,再转换为二进制形式进行保存
     def _bytes_feature(self, value):
+        if not isinstance(value, list):
+            value = [value]
         return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
     def create_tfrecord(self):
@@ -53,20 +56,23 @@ class TFRecord(object):
             for line in lines:
                 num = line[0:-1]
                 image = self.dataset.load_image(num)
-                label = self.dataset.load_label(num)
+                boxes = self.dataset.load_label(num)
 
-                if len(label) == 0:
+                if len(boxes) == 0:
                     continue
 
+                image, boxes = letterbox_resize(image, np.array(boxes, dtype=np.float32), self.input_height, self.input_width)
+                while boxes.shape[0] < 300:
+                    boxes = np.append(boxes, [[0.0, 0.0, 0.0, 0.0, 0.0]], axis=0)
+                boxes = np.array(boxes, dtype=np.float32)
+
                 image_string = image.tobytes()
-                label_string = label.tobytes()
-                label_shape = label.shape
+                boxes_string = boxes.tobytes()
 
                 example = tf.train.Example(features=tf.train.Features(
                     feature={
                         'image': tf.train.Feature(bytes_list=tf.train.BytesList(value=[image_string])),
-                        'label': tf.train.Feature(bytes_list=tf.train.BytesList(value=[label_string])),
-                        'bbox_shape': tf.train.Feature(int64_list=tf.train.Int64List(value=label_shape))
+                        'bbox': tf.train.Feature(bytes_list=tf.train.BytesList(value=[boxes_string])),
                     }))
                 writer.write(example.SerializeToString())
         writer.close()
@@ -81,25 +87,23 @@ class TFRecord(object):
             serialized_example,
             features={
                 'image': tf.FixedLenFeature([], tf.string),
-                'label': tf.FixedLenFeature([], tf.string),
-                'label_shape': tf.FixedLenFeature(shape=(2,), dtype=tf.int64)
+                'bbox': tf.FixedLenFeature([], tf.string),
             })
 
         image = features['image']
-        label = features['label']
-        label_shape = features['label_shape']
+        label = features['bbox']
 
         # 进行解码
-        tf_image = tf.decode_raw(image, tf.float32)
+        tf_image = tf.decode_raw(image, tf.uint8)
         tf_label = tf.decode_raw(label, tf.float32)
 
         # 转换为网络输入所要求的形状
         tf_image = tf.reshape(tf_image, [self.input_height, self.input_width, self.channels])
-        tf_label = tf.reshape(tf_label, label_shape)
+        tf_label = tf.reshape(tf_label, [300, 5])
 
         # preprocess
-        tf_image = tf_image / 255
-        tf_image, y_true_13, y_true_26, y_true_52 = tf.py_func(self.dataset.preprocess_data, inp=[tf_image, tf_label, self.input_height, self.input_width], Tout=[tf.float32, tf.float32, tf.float32, tf.float32])
+        tf_image, y_true_13, y_true_26, y_true_52 = tf.py_func(self.dataset.preprocess_data, inp=[tf_image, tf_label, self.input_height, self.input_width], Tout=[tf.uint8, tf.float32, tf.float32, tf.float32])
+        tf_image = tf.cast(tf_image, tf.float32) / 255.0
 
         return tf_image, y_true_13, y_true_26, y_true_52
 
@@ -123,29 +127,32 @@ class TFRecord(object):
 
 if __name__ == '__main__':
     tfrecord = TFRecord()
-    #tfrecord.create_tfrecord()
+    tfrecord.create_tfrecord()
 
-    import cv2
-    import utils.visualize as v
-
-    record_file = './tfrecord/train.tfrecord'
-    data_train = tfrecord.create_dataset(record_file, batch_size=2, is_shuffle=False, n_repeats=20)
-    # data_train = tf.data.TFRecordDataset(record_file)
-    # data_train = data_train.map(tfrecord.parse_single_example)
-    iterator = data_train.make_one_shot_iterator()
-    batch_image, y_true_13, y_true_26, y_true_52 = iterator.get_next()
-
-    with tf.Session() as sess:
-        for i in range(20):
-            try:
-                image, true_19, true_38, true_76 = sess.run([batch_image, y_true_13, y_true_26, y_true_52])
-
-                # for boxes in label:
-                #     v.draw_rotated_box(image, int(boxes[0]), int(boxes[1]), int(boxes[2]), int(boxes[3]), boxes[5],
-                #                        (255, 0, 0))
-                # cv2.imshow("image", image)
-                # cv2.waitKey(0)
-                print(np.shape(image))
-            except tf.errors.OutOfRangeError:
-                print("Done!!!")
-                break
+    # import cv2
+    # import matplotlib.pyplot as plt
+    # record_file = '../tfrecord/train.tfrecord'
+    # data_train = tfrecord.create_dataset(record_file, batch_size=4, is_shuffle=False)
+    # # data_train = tf.data.TFRecordDataset(record_file)
+    # # data_train = data_train.map(tfrecord.parse_single_example)
+    # iterator = data_train.make_one_shot_iterator()
+    # batch_image, y_true_13, y_true_26, y_true_52 = iterator.get_next()
+    #
+    # with tf.Session() as sess:
+    #     for i in range(20):
+    #         try:
+    #             images_, y_true_13_, y_true_26_, y_true_52_ = sess.run([batch_image, y_true_13, y_true_26, y_true_52])
+    #
+    #             # for images_i, y_true_13_i, y_true_26_i, y_true_52_i in zip(images_, y_true_13_, y_true_26_, y_true_52_):
+    #
+    #                 # boxes_ = boxes_[..., 0:4]
+    #                 # valid = (np.sum(boxes_, axis=-1) > 0).tolist()
+    #                 # print([int(idx) for idx in boxes_[:, 0][valid].tolist()])
+    #                 # for box in boxes_[:, 0:4][valid].tolist():
+    #                 #     cv2.rectangle(images_i, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), (255, 0, 0), 2)
+    #                 # cv2.imshow("image", images_i)
+    #                 # cv2.waitKey(0)
+    #             print(images_.shape, y_true_13_.shape)
+    #         except tf.errors.OutOfRangeError:
+    #             print("Done!!!")
+    #             break

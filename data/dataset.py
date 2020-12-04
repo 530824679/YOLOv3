@@ -27,18 +27,21 @@ class Dataset(object):
         self.input_height = model_params['input_height']
         self.input_width = model_params['input_width']
         self.iou_threshold = model_params['iou_threshold']
-        self.strides = model_params['strides']
         self.anchors = model_params['anchors']
         self.anchor_per_scale = model_params['anchor_per_scale']
         self.class_num = len(model_params['classes'])
         self.max_bbox_per_scale = model_params['max_bbox_per_scale']
-        self.feature_map_sizes = [np.array([self.input_height, self.input_width]) // stride for stride in self.strides]
 
     def load_image(self, image_num):
         image_path = os.path.join(self.data_path, 'JPEGImages', image_num + '.jpg')
-        if not os.path.exists(image_path):
+        image_path_1 = os.path.join(self.data_path, 'JPEGImages', image_num + '.JPG')
+
+        if os.path.exists(image_path):
+            image = cv2.imread(image_path)
+        elif os.path.exists(image_path_1):
+            image = cv2.imread(image_path_1)
+        else:
             raise KeyError("%s does not exist ... " %image_path)
-        image = cv2.imread(image_path)
 
         return image
 
@@ -66,12 +69,12 @@ class Dataset(object):
             box = [xmin, ymin, xmax, ymax, class_index]
             bboxes.append(box)
 
-        return np.array(bboxes)
+        return bboxes
 
     def cls_type_to_id(self, data):
-        type = data[1]
+        type = data
         if type not in classes_map.keys():
-            print("class is %s", type)
+            print("class is:{}".format(type))
             return -1
         return classes_map[type]
 
@@ -83,22 +86,11 @@ class Dataset(object):
         # random color jittering
         image = random_color_distort(image)
 
-        # random color jittering
-        image, boxes = random_expand(image, boxes)
-
-        # random cropping
-        image, boxes = random_crop(image, boxes)
-
         # random translate
         image, boxes = random_translate(image, boxes)
 
         # random horizontal flip
         image, boxes = random_horizontal_flip(image, boxes)
-
-        image, boxes = letterbox_resize(image, boxes, input_height, input_width)
-
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
-        image = image / 255.
 
         y_true_13, y_true_26, y_true_52 = self.preprocess_true_boxes(boxes, input_height, input_width, self.anchors, self.class_num)
 
@@ -120,8 +112,13 @@ class Dataset(object):
         """
         input_shape = np.array([input_height, input_width], dtype=np.int32)
         num_layers = len(anchors) // 3
+        anchors = np.array(anchors)
         anchor_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
         feature_map_sizes = [input_shape // 32, input_shape // 16, input_shape // 8]
+
+        # labels 去除空标签
+        valid = (np.sum(labels, axis=-1) > 0).tolist()
+        labels = labels[valid]
 
         y_true_13 = np.zeros(shape=[feature_map_sizes[0][0], feature_map_sizes[0][1], 3, 5 + num_classes], dtype=np.float32)
         y_true_26 = np.zeros(shape=[feature_map_sizes[1][0], feature_map_sizes[1][1], 3, 5 + num_classes], dtype=np.float32)
@@ -159,17 +156,17 @@ class Dataset(object):
         best_anchor = np.argmax(iou, axis=-1)
 
         ratio_dict = {1.: 8., 2.: 16., 3.: 32.}
-        for i, idx in enumerate(best_anchor):
+        for n, idx in enumerate(best_anchor):
             # idx: 0,1,2 ==> 2; 3,4,5 ==> 1; 6,7,8 ==> 0
             feature_map_group = 2 - idx // 3
             # scale ratio: 0,1,2 ==> 8; 3,4,5 ==> 16; 6,7,8 ==> 32
             ratio = ratio_dict[np.ceil((idx + 1) / 3.)]
 
-            i = int(np.floor(true_boxes[i, 0] / ratio))
-            j = int(np.floor(true_boxes[i, 1] / ratio))
+            i = int(np.floor(true_boxes[n, 0] / ratio))
+            j = int(np.floor(true_boxes[n, 1] / ratio))
             k = anchor_mask[feature_map_group].index(idx)
-            c = labels[i][4].astype('int32')
-            print(feature_map_group, '|', j, i, k, c)
+            c = labels[n][4].astype('int32')
+            #print(feature_map_group, '|', j, i, k, c)
 
             # smooth labels
             onehot = np.zeros(self.class_num, dtype=np.float)
@@ -178,7 +175,7 @@ class Dataset(object):
             deta = 0.01
             smooth_onehot = onehot * (1 - deta) + deta * uniform_distribution
 
-            y_true[feature_map_group][j, i, k, 0:4] = true_boxes[i, 0:4]
+            y_true[feature_map_group][j, i, k, 0:4] = true_boxes[n, 0:4]
             y_true[feature_map_group][j, i, k, 4] = 1
             y_true[feature_map_group][j, i, k, 5:] = smooth_onehot
 
