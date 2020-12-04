@@ -60,9 +60,17 @@ def calculate_iou(box_1, box_2):
     return iou
 
 def bboxes_cut(bbox_min_max, bboxes):
-    bboxes = np.concatenate([np.maximum(bboxes[:, :2], [bbox_min_max[0], bbox_min_max[1]]), np.minimum(bboxes[:, 2:], [bbox_min_max[2] - 1, bbox_min_max[3] - 1])], axis=-1)
-    invalid_mask = np.logical_or((bboxes[:, 0] > bboxes[:, 2]), (bboxes[:, 1] > bboxes[:, 3]))
-    return invalid_mask
+    bboxes = np.copy(bboxes)
+    bboxes = np.transpose(bboxes)
+    bbox_min_max = np.transpose(bbox_min_max)
+
+    # cut the box
+    bboxes[0] = np.maximum(bboxes[0],bbox_min_max[0]) # xmin
+    bboxes[1] = np.maximum(bboxes[1],bbox_min_max[1]) # ymin
+    bboxes[2] = np.minimum(bboxes[2],bbox_min_max[2]) # xmax
+    bboxes[3] = np.minimum(bboxes[3],bbox_min_max[3]) # ymax
+    bboxes = np.transpose(bboxes)
+    return bboxes
 
 def bboxes_sort(coords, scores, classes, top_k=150):
     index = np.argsort(-scores)
@@ -70,6 +78,19 @@ def bboxes_sort(coords, scores, classes, top_k=150):
     scores = scores[index][:top_k]
     coords = coords[index][:top_k]
     return coords, scores, classes
+
+def bboxes_nms(classes, scores, bboxes, nms_threshold=0.5):
+    keep_bboxes = np.ones(scores.shape, dtype=np.bool)
+    for i in range(scores.size-1):
+        if keep_bboxes[i]:
+            # Computer overlap with bboxes which are following.
+            overlap = calculate_iou(bboxes[i], bboxes[(i+1):])
+            # Overlap threshold for keeping + checking part of the same class
+            keep_overlap = np.logical_or(overlap < nms_threshold, classes[(i+1):] != classes[i])
+            keep_bboxes[(i+1):] = np.logical_and(keep_bboxes[(i+1):], keep_overlap)
+
+    idxes = np.where(keep_bboxes)
+    return classes[idxes], scores[idxes], bboxes[idxes]
 
 def non_maximum_suppression(bboxes, scores, classes, iou_threshold=0.45):
     """
@@ -139,60 +160,41 @@ def soft_non_maximum_suppression(classes, scores, bboxes, sigma=0.3):
 
     return best_results
 
-def postpreocess(bboxes, input_size, origin_size, score_threshold=0.01):
-    """
-    The result of network prediction is processed and filtered bounding boxes
-    :param bboxes: predict result shape is [num, 6] x, y, w, h, score, class
-    :param input_size: network input size (h, w)
-    :param origin_size: image origin size (h, w)
-    :param score_threshold: filter threshold
-    :return:
-    """
-    valid_scale = [0, np.inf]
-    pred_xywh = bboxes[:, 0:4]
-    pred_conf = bboxes[:, 4]
-    pred_prob = bboxes[:, 5:]
+def postprocess(bboxes, obj_probs, class_probs, image_shape=(416,416), threshold=0.5):
+    # boxes shape——> [num, 4]
+    bboxes = np.reshape(bboxes, [-1, 4])
 
-    # transform (x, y, w, h) to (xmin, ymin, xmax, ymax)
-    pred_coord = np.concatenate([pred_xywh[:, :2] - pred_xywh[:, 2:] * 0.5, pred_xywh[:, :2] + pred_xywh[:, 2:] * 0.5], axis=-1)
+    # 将box还原成图片中真实的位置
+    bboxes[:, 0:1] *= float(image_shape[1])  # xmin*width
+    bboxes[:, 1:2] *= float(image_shape[0])  # ymin*height
+    bboxes[:, 2:3] *= float(image_shape[1])  # xmax*width
+    bboxes[:, 3:4] *= float(image_shape[0])  # ymax*height
+    bboxes = bboxes.astype(np.int32)
 
-    # transform (xmin, ymin, xmax, ymax) to (xmin_origin, ymin_origin, xmax_origin, ymax_origin)
-    input_height, input_width = input_size
-    origin_height, origin_width = origin_size
-    resize_ratio = min(input_width / origin_width, input_height / origin_height)
-    dw = (input_width - resize_ratio * origin_width) / 2
-    dh = (input_height - resize_ratio * origin_height) / 2
-    pred_coord[:, 0::2] = 1.0 * (pred_coord[:, 0::2] - dw) / resize_ratio
-    pred_coord[:, 1::2] = 1.0 * (pred_coord[:, 1::2] - dh) / resize_ratio
+    # 将边界框超出整张图片(0,0)—(415,415)的部分cut掉
+    bbox_min_max = [0, 0, image_shape[1] - 1, image_shape[0] - 1]
+    bboxes = bboxes_cut(bbox_min_max, bboxes)
 
-    # cut out the part of the boundary box that goes beyond the entire image
-    bbox_min_max = [0, 0, origin_width - 1, origin_height - 1]
-    invalid_mask = bboxes_cut(bbox_min_max, pred_coord)
-    pred_coord[invalid_mask] = 0
+    # 置信度 * 类别条件概率 = 类别置信度scores
+    obj_probs = np.reshape(obj_probs, [-1])
+    class_probs = np.reshape(class_probs, [len(obj_probs), -1])
+    class_max_index = np.argmax(class_probs, axis=1)
+    class_probs = class_probs[np.arange(len(obj_probs)), class_max_index]
+    scores = obj_probs * class_probs
 
-    # discard some invalid boxes
-    bboxes_scale = np.sqrt(np.multiply.reduce(pred_coord[:, 2:4] - pred_coord[:, 0:2], axis=-1))
-    scale_mask = np.logical_and((valid_scale[0] < bboxes_scale), (bboxes_scale < valid_scale[1]))
+    # 类别置信度scores > threshold的边界框bboxes留下
+    keep_index = scores > threshold
+    class_max_index = class_max_index[keep_index]
+    scores = scores[keep_index]
+    bboxes = bboxes[keep_index]
 
-    # confidence * category conditional probability = category confidence scores
-    classes_max = np.argmax(pred_prob, axis=1)
-    pred_prob = pred_prob[np.arange(len(pred_coord)), classes_max]
-    conf_scores = pred_conf * pred_prob
+    # 排序取前400个
+    class_max_index, scores, bboxes = bboxes_sort(class_max_index, scores, bboxes)
 
-    # class confidence scores > threshold
-    keep_index = conf_scores > score_threshold
-    mask = np.logical_and(scale_mask, keep_index)
-    coords, scores, classes = pred_coord[mask], conf_scores[mask], classes_max[mask]
+    # 计算nms
+    class_max_index, scores, bboxes = bboxes_nms(class_max_index, scores, bboxes)
 
-    # sort the first 400
-    scores = scores[:, np.newaxis]
-    classes = classes[:, np.newaxis]
-    coords, scores, classes = bboxes_sort(coords, scores, classes)
-
-    # calculate nms
-    results = non_maximum_suppression(coords, scores, classes)
-
-    return results
+    return bboxes, scores, class_max_index
 
 def preporcess(image, target_size, gt_boxes=None):
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
@@ -217,18 +219,31 @@ def preporcess(image, target_size, gt_boxes=None):
         gt_boxes[:, [1, 3]] = gt_boxes[:, [1, 3]] * scale + dh
         return image_paded, gt_boxes
 
-def visualization(image, bboxes, labels, thr=0.3):
-    """
-    # Generate colors for drawing bounding boxes.
-    :param image: raw image
-    :param bboxes: shape is [num, 6]
-    :param labels: shape is [num, ]
-    :param thr:
-    :return:
-    """
-    if bboxes is None:
-        return image
+def process(image, image_size=(416, 416)):
+    image_copy = np.copy(image).astype(np.float32)
 
+    # letter resize
+    image_height, image_width = image.shape[:2]
+    resize_ratio = min(image_size[0] / image_width, image_size[1] / image_height)
+    resize_width = int(resize_ratio * image_width)
+    resize_height = int(resize_ratio * image_height)
+
+    image_resized = cv2.resize(image_copy, (resize_width, resize_height), interpolation=0)
+    image_padded = np.full((image_size[0], image_size[1], 3), 128, np.uint8)
+
+    dw = int((image_size[0] - resize_width) / 2)
+    dh = int((image_size[1] - resize_height) / 2)
+
+    image_padded[dh:resize_height + dh, dw:resize_width + dw, :] = image_resized
+
+    image_normalized = image_padded.astype(np.float32) / 225.0
+
+    image_expanded = np.expand_dims(image_normalized, axis=0)
+
+    return image_expanded
+
+def visualization(im, bboxes, scores, cls_inds, labels, thr=0.02):
+    # Generate colors for drawing bounding boxes.
     hsv_tuples = [(x / float(len(labels)), 1., 1.) for x in range(len(labels))]
     colors = list(map(lambda x: colorsys.hsv_to_rgb(*x), hsv_tuples))
     colors = list(map(lambda x: (int(x[0] * 255), int(x[1] * 255), int(x[2] * 255)), colors))
@@ -238,20 +253,20 @@ def visualization(image, bboxes, labels, thr=0.3):
     random.seed(None)  # Reset seed to default.
 
     # draw image
-    cvImage = np.copy(image)
-    h, w, _ = cvImage.shape
-    for i, box in enumerate(bboxes[:, 0:4]):
-        if bboxes[i, 4] < thr:
+    imgcv = np.copy(im)
+    h, w, _ = imgcv.shape
+    for i, box in enumerate(bboxes):
+        if scores[i] < thr:
             continue
-        cls_indx = bboxes[i][5]
+        cls_indx = cls_inds[i]
 
         thick = int((h + w) / 300)
-        cv2.rectangle(cvImage, (box[0], box[1]), (box[2], box[3]), colors[cls_indx], thick)
-        bbox_text = '%s: %.3f' % (labels[cls_indx], bboxes[i, 4])
+        cv2.rectangle(imgcv, (box[0], box[1]), (box[2], box[3]), colors[cls_indx], thick)
+        mess = '%s: %.3f' % (labels[cls_indx], scores[i])
         if box[1] < 20:
             text_loc = (box[0] + 2, box[1] + 15)
         else:
             text_loc = (box[0], box[1] - 10)
-        cv2.putText(cvImage, bbox_text, text_loc, cv2.FONT_HERSHEY_SIMPLEX, 1e-3 * h, (255, 255, 255), thick // 3)
-    cv2.imshow("test", cvImage)
+        cv2.putText(imgcv, mess, text_loc, cv2.FONT_HERSHEY_SIMPLEX, 1e-3 * h, (255, 255, 255), thick // 3)
+    cv2.imshow("test", imgcv)
     cv2.waitKey(0)

@@ -120,6 +120,54 @@ class Network(object):
 
         return conv_lbbox, conv_mbbox, conv_sbbox
 
+    def inference(self, inputs, scope='inference'):
+        route_1, route_2, input_data = self.darknet53(inputs, self.is_train)
+        conv_lbbox, conv_mbbox, conv_sbbox = self.detect_head(route_1, route_2, input_data)
+        feature_map_anchors = [(conv_sbbox, self.anchors[6:9]),
+                               (conv_mbbox, self.anchors[3:6]),
+                               (conv_lbbox, self.anchors[0:3])]
+        reorg_results = [self.reorg_layer(feature_map, anchors) for (feature_map, anchors) in feature_map_anchors]
+
+        def _reshape(result):
+            x_y_offset, boxes, conf_logits, prob_logits = result
+            grid_size = x_y_offset.get_shape().as_list()[:2]
+            boxes = tf.reshape(boxes, [-1, grid_size[0] * grid_size[1] * 3, 4])
+            conf_logits = tf.reshape(conf_logits, [-1, grid_size[0] * grid_size[1] * 3, 1])
+            prob_logits = tf.reshape(prob_logits, [-1, grid_size[0] * grid_size[1] * 3, self.class_num])
+            # shape: (take 416*416 input image and feature_map_1 for example)
+            # boxes: [N, 13*13*3, 4]
+            # conf_logits: [N, 13*13*3, 1]
+            # prob_logits: [N, 13*13*3, class_num]
+            return boxes, conf_logits, prob_logits
+
+        boxes_list, confs_list, probs_list = [], [], []
+        for result in reorg_results:
+            boxes, conf_logits, prob_logits = _reshape(result)
+            confs = tf.sigmoid(conf_logits)
+            probs = tf.sigmoid(prob_logits)
+            boxes_list.append(boxes)
+            confs_list.append(confs)
+            probs_list.append(probs)
+
+        # collect results on three scales
+        # take 416*416 input image for example:
+        # shape: [N, (13*13+26*26+52*52)*3, 4]
+        boxes = tf.concat(boxes_list, axis=1)
+        # shape: [N, (13*13+26*26+52*52)*3, 1]
+        confs = tf.concat(confs_list, axis=1)
+        # shape: [N, (13*13+26*26+52*52)*3, class_num]
+        probs = tf.concat(probs_list, axis=1)
+
+        center_x, center_y, width, height = tf.split(boxes, [1, 1, 1, 1], axis=-1)
+        x_min = center_x - width / 2
+        y_min = center_y - height / 2
+        x_max = center_x + width / 2
+        y_max = center_y + height / 2
+
+        boxes = tf.concat([x_min, y_min, x_max, y_max], axis=-1)
+
+        return boxes, confs, probs
+
     def reorg_layer(self, feature_maps, anchors):
         """
         解码网络输出的特征图
@@ -164,11 +212,12 @@ class Network(object):
         if self.is_train == False:
             # 转变成坐上-右下坐标
             bboxes_xywh = tf.concat([bboxes_xy, bboxes_wh], axis=-1)
-            bboxes_corners = tf.stack([bboxes_xywh[..., 0] - bboxes_xywh[..., 2] / 2,
-                                       bboxes_xywh[..., 1] - bboxes_xywh[..., 3] / 2,
-                                       bboxes_xywh[..., 0] + bboxes_xywh[..., 2] / 2,
-                                       bboxes_xywh[..., 1] + bboxes_xywh[..., 3] / 2], axis=3)
-            return bboxes_corners, obj_probs, class_probs
+            # bboxes_corners = tf.stack([bboxes_xywh[..., 0] - bboxes_xywh[..., 2] / 2,
+            #                            bboxes_xywh[..., 1] - bboxes_xywh[..., 3] / 2,
+            #                            bboxes_xywh[..., 0] + bboxes_xywh[..., 2] / 2,
+            #                            bboxes_xywh[..., 1] + bboxes_xywh[..., 3] / 2], axis=3)
+            # return bboxes_corners, obj_probs, class_probs
+            return xy_cell, bboxes_xywh, feature_maps[..., 4:5], feature_maps[..., 5:]
         return xy_cell, feature_maps, bboxes_xy, bboxes_wh
 
     def calc_loss(self, y_logit, y_true):
