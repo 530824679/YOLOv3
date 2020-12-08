@@ -11,6 +11,7 @@ import os
 path_params = {
     'data_path': '/home/chenwei/HDD/Project/datasets/object_detection/VOC2028',
     'checkpoints_dir': './checkpoints',
+    'weights_dir': './weights',
     'logs_dir': './logs',
     'tfrecord_dir': './tfrecord',
     'checkpoints_name': 'model.ckpt',
@@ -45,11 +46,12 @@ solver_params = {
     'staircase': True,
     'batch_size': 8,                # 每批次输入的数据个数
     'total_epoches': 100000,        # 训练的最大迭代次数
-    'save_step': 1000,              # 权重保存间隔
+    'save_step': 500,               # 权重保存间隔
     'log_step': 1000,               # 日志保存间隔
     'display_step': 100,            # 显示打印间隔
     'weight_decay': 0.0001,         # 正则化系数
-    'restore': False                # 支持restore
+    'restore': False,               # 支持restore
+    'pre_train': True
 }
 
 test_params = {

@@ -131,7 +131,7 @@ class Network(object):
                 with tf.variable_scope('darknet53'):
                     route_1, route_2, route_3 = self.darknet53(inputs)
 
-                with tf.variable_scope('detect_head'):
+                with tf.variable_scope('yolov3_head'):
                     conv_lbbox, conv_mbbox, conv_sbbox = self.detect_head(route_1, route_2, route_3)
 
             return conv_lbbox, conv_mbbox, conv_sbbox

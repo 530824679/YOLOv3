@@ -9,7 +9,7 @@ from model.network import Network
 from cfg.config import *
 
 def predict_image():
-    image_path = "/home/chenwei/HDD/Project/datasets/object_detection/VOC2028/JPEGImages/000000.jpg"
+    image_path = "/home/chenwei/HDD/Project/datasets/object_detection/VOC2028/JPEGImages/000006.jpg"
     image = cv2.imread(image_path)
 
     input_shape = (416, 416)
@@ -18,10 +18,12 @@ def predict_image():
 
     input = tf.placeholder(tf.float32,[1, input_shape[0], input_shape[1], 3])
 
-    network = Network(is_train=False)
-    output = network.inference(input)
+    model = Network(len(model_params['classes']), model_params['anchors'], is_train=False)
+    with tf.variable_scope('yolov3'):
+        logits = model.build_network(input)
+        output = model.inference(logits)
 
-    checkpoints = "./checkpoints/model.ckpt-15000"
+    checkpoints = "./checkpoints/model.ckpt-48000"
     saver = tf.train.Saver()
     with tf.Session() as sess:
         saver.restore(sess, checkpoints)

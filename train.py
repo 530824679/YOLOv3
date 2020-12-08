@@ -21,6 +21,7 @@ def train():
     start_step = 0
     log_step = solver_params['log_step']
     restore = solver_params['restore']
+    pre_train = solver_params['pre_train']
     checkpoint_dir = path_params['checkpoints_dir']
     checkpoints_name = path_params['checkpoints_name']
     tfrecord_dir = path_params['tfrecord_dir']
@@ -62,37 +63,30 @@ def train():
     tf.summary.scalar('loss_l2', l2_loss)
     tf.summary.scalar('loss_ratio', l2_loss / loss[0])
 
-    # 创建全局的步骤
-    global_step = tf.train.create_global_step()
-    # 设定变化的学习率
-    learning_rate = tf.train.exponential_decay(
-        solver_params['learning_rate'],
-        global_step,
-        solver_params['decay_steps'],
-        solver_params['decay_rate'],
-        solver_params['staircase'],
-        name='learning_rate')
+    # setting restore parts and vars to update
+    restore_include = None
+    restore_exclude = ['yolov3/yolov3_head/Conv_14', 'yolov3/yolov3_head/Conv_6', 'yolov3/yolov3_head/Conv_22']
+    update_part = ['yolov3/yolov3_head']
+    saver_to_restore = tf.train.Saver(var_list=tf.contrib.framework.get_variables_to_restore(include=restore_include, exclude=restore_exclude))
+    update_vars = tf.contrib.framework.get_variables_to_restore(include=update_part)
+
+    global_step = tf.Variable(float(0), trainable=False, collections=[tf.GraphKeys.LOCAL_VARIABLES])
+    learning_rate = tf.train.exponential_decay(solver_params['learning_rate'], global_step, 30000, 0.1, name='learning_rate')
 
     # 设置优化器
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(update_ops):
         # 采用的优化方法是随机梯度下降
-        # train_op = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9).minimize(loss[0] + l2_loss, global_step=global_step)
-
         optimizer = tf.train.MomentumOptimizer(learning_rate, momentum=0.9)
-        gvs = optimizer.compute_gradients(loss[0] + l2_loss)
-        clip_grad_var = [gv if gv[0] is None else [
-            tf.clip_by_norm(gv[0], 100.), gv[1]] for gv in gvs]
+        gvs = optimizer.compute_gradients(loss[0] + l2_loss, var_list=update_vars)
+        clip_grad_var = [gv if gv[0] is None else [tf.clip_by_norm(gv[0], 100.), gv[1]] for gv in gvs]
         train_op = optimizer.apply_gradients(clip_grad_var, global_step=global_step)
-
-    # 模型保存
-    save_variable = tf.global_variables()
-    saver = tf.train.Saver(save_variable, max_to_keep=1000)
 
     # 配置tensorboard
     summary_op = tf.summary.merge_all()
     summary_writer = tf.summary.FileWriter(log_dir, graph=tf.get_default_graph(), flush_secs=60)
 
+    saver = tf.train.Saver()
     with tf.Session(config=config) as sess:
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
 
@@ -103,10 +97,12 @@ def train():
                 restore_step = int(stem.split('.')[0].split('-')[-1])
                 start_step = restore_step
                 sess.run(global_step.assign(restore_step))
-                saver.restore(sess, ckpt.model_checkpoint_path)
+                saver_to_restore.restore(sess, ckpt.model_checkpoint_path)
                 print('Restoreing from {}'.format(ckpt.model_checkpoint_path))
             else:
                 print("Failed to find a checkpoint")
+        elif pre_train == True:
+            saver_to_restore.restore(sess, os.path.join(path_params['weights_dir'], 'yolov3.ckpt'))
 
         summary_writer.add_graph(sess.graph)
 
