@@ -92,6 +92,9 @@ class Dataset(object):
         # random horizontal flip
         image, boxes = random_horizontal_flip(image, boxes)
 
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
+        image = image / 255.
+
         y_true_13, y_true_26, y_true_52 = self.preprocess_true_boxes(boxes, input_height, input_width, self.anchors, self.class_num)
 
         return image, y_true_13, y_true_26, y_true_52

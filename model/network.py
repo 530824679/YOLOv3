@@ -13,116 +13,132 @@ from cfg.config import model_params, solver_params
 from model.ops import *
 
 class Network(object):
-    def __init__(self, is_train):
+    def __init__(self, class_num, anchors, is_train):
         self.is_train = is_train
-        self.classes = model_params['classes']
-        self.class_num = len(self.classes)
-        self.anchors = np.array(model_params['anchors'])
+        self.class_num = class_num
+        self.anchors = anchors
         self.anchor_per_sacle = model_params['anchor_per_scale']
         self.upsample_method = model_params['upsample_method']
-
+        self.batch_norm_decay = model_params['batch_norm_decay']
+        self.weight_decay = model_params['weight_decay']
         self.batch_size = solver_params['batch_size']
         self.input_height = model_params['input_height']
         self.input_width = model_params['input_width']
         self.input_size = np.array([self.input_height, self.input_width])
         self.iou_threshold = model_params['iou_threshold']
 
-    def darknet53(self, inputs, scope='darknet53'):
+    def darknet53(self, inputs):
         """
         定义网络特征提取层
         :param inputs:待输入的样本图片
         :param scope: 命名空间
         :return: 三个不同尺度的基础特征图输出
         """
-        with tf.variable_scope('darknet'):
-            input_data = conv2d(inputs, filters_shape=(3, 3, 3, 32), trainable=self.is_train, scope='conv0')
-            input_data = conv2d(input_data, filters_shape=(3, 3, 32, 64), trainable=self.is_train, scope='conv1', downsample=True)
+        net = conv2d(inputs, 32, 3, strides=1)
+        net = conv2d(net, 64, 3, strides=2)
 
-            for i in range(1):
-                input_data = residual_block(input_data, 64, 32, 64, trainable=self.is_train, scope='residual%d' % (i + 0))
+        for i in range(1):
+            net = residual_block(net, 32)
 
-            input_data = conv2d(input_data, filters_shape=(3, 3, 64, 128), trainable=self.is_train, scope='conv4', downsample=True)
+        net = conv2d(net, 128, 3, strides=2)
 
-            for i in range(2):
-                input_data = residual_block(input_data, 128, 64, 128, trainable=self.is_train, scope='residual%d' % (i + 1))
+        for i in range(2):
+            net = residual_block(net, 64)
 
-            input_data = conv2d(input_data, filters_shape=(3, 3, 128, 256), trainable=self.is_train, scope='conv9', downsample=True)
+        net = conv2d(net, 256, 3, strides=2)
 
-            for i in range(8):
-                input_data = residual_block(input_data, 256, 128, 256, trainable=self.is_train, scope='residual%d' % (i + 3))
+        for i in range(8):
+            net = residual_block(net, 128)
 
-            route_1 = input_data
-            input_data = conv2d(input_data, filters_shape=(3, 3, 256, 512), trainable=self.is_train, scope='conv26', downsample=True)
+        route_1 = net
+        net = conv2d(net, 512, 3, strides=2)
 
-            for i in range(8):
-                input_data = residual_block(input_data, 512, 256, 512, trainable=self.is_train, scope='residual%d' % (i + 11))
+        for i in range(8):
+            net = residual_block(net, 256)
 
-            route_2 = input_data
-            input_data = conv2d(input_data, filters_shape=(3, 3, 512, 1024), trainable=self.is_train, scope='conv43', downsample=True)
+        route_2 = net
+        net = conv2d(net, 1024, 3, strides=2)
 
-            for i in range(4):
-                input_data = residual_block(input_data, 1024, 512, 1024, trainable=self.is_train, scope='residual%d' % (i + 19))
+        for i in range(4):
+            net = residual_block(net, 512)
+        route_3 = net
 
-            return route_1, route_2, input_data
+        return route_1, route_2, route_3
 
-    def detect_head(self, route_1, route_2, input_data):
-        input_data = conv2d(input_data, (1, 1, 1024, 512), self.is_train, scope='conv52')
-        input_data = conv2d(input_data, (3, 3, 512, 1024), self.is_train, scope='conv53')
-        input_data = conv2d(input_data, (1, 1, 1024, 512), self.is_train, scope='conv54')
-        input_data = conv2d(input_data, (3, 3, 512, 1024), self.is_train, scope='conv55')
-        input_data = conv2d(input_data, (1, 1, 1024, 512), self.is_train, scope='conv56')
+    def detect_head(self, route_1, route_2, route_3):
+        input_data = conv2d(route_3, 512, 1)
+        input_data = conv2d(input_data, 1024, 3)
+        input_data = conv2d(input_data, 512, 1)
+        input_data = conv2d(input_data, 1024, 3)
+        input_data = conv2d(input_data, 512, 1)
 
-        conv_lobj_branch = conv2d(input_data, (3, 3, 512, 1024), self.is_train, scope='conv_lobj_branch')
-        conv_lbbox = conv2d(conv_lobj_branch, (1, 1, 1024, 3 * (self.class_num + 5)), trainable=self.is_train, scope='conv_lbbox', activate=False, bn=False)
+        conv_lobj_branch = conv2d(input_data, 1024, 3)
+        conv_lbbox = slim.conv2d(conv_lobj_branch, 3 * (self.class_num + 5), 1, stride=1, normalizer_fn=None, activation_fn=None, biases_initializer=tf.glorot_uniform_initializer())
+        conv_lbbox = tf.identity(conv_lbbox, name='conv_lbbox')
 
-        input_data = conv2d(input_data, (1, 1, 512, 256), self.is_train, scope='conv57')
-        input_data = upsample(input_data, scope='upsample0', method=self.upsample_method)
+        input_data = conv2d(input_data, 256, 1)
+        input_data = upsample(input_data, method=self.upsample_method)
+        input_data = tf.concat([input_data, route_2], axis=-1)
 
-        with tf.variable_scope('route_1'):
-            input_data = tf.concat([input_data, route_2], axis=-1)
+        input_data = conv2d(input_data, 256, 1)
+        input_data = conv2d(input_data, 512, 3)
+        input_data = conv2d(input_data, 256, 1)
+        input_data = conv2d(input_data, 512, 3)
+        input_data = conv2d(input_data, 256, 1)
 
-        input_data = conv2d(input_data, (1, 1, 768, 256), self.is_train, scope='conv58')
-        input_data = conv2d(input_data, (3, 3, 256, 512), self.is_train, scope='conv59')
-        input_data = conv2d(input_data, (1, 1, 512, 256), self.is_train, scope='conv60')
-        input_data = conv2d(input_data, (3, 3, 256, 512), self.is_train, scope='conv61')
-        input_data = conv2d(input_data, (1, 1, 512, 256), self.is_train, scope='conv62')
+        conv_mobj_branch = conv2d(input_data, 512, 3)
+        conv_mbbox = slim.conv2d(conv_mobj_branch, 3 * (5 + self.class_num), 1, stride=1, normalizer_fn=None, activation_fn=None, biases_initializer=tf.glorot_uniform_initializer())
+        conv_mbbox = tf.identity(conv_mbbox, name='conv_mbbox')
 
-        conv_mobj_branch = conv2d(input_data, (3, 3, 256, 512), self.is_train, scope='conv_mobj_branch')
-        conv_mbbox = conv2d(conv_mobj_branch, (1, 1, 512, 3 * (self.class_num + 5)), trainable=self.is_train, scope='conv_mbbox', activate=False, bn=False)
+        input_data = conv2d(input_data, 128, 1)
+        input_data = upsample(input_data, method=self.upsample_method)
+        input_data = tf.concat([input_data, route_1], axis=-1)
 
-        input_data = conv2d(input_data, (1, 1, 256, 128), self.is_train, scope='conv63')
-        input_data = upsample(input_data, scope='upsample1', method=self.upsample_method)
+        input_data = conv2d(input_data, 128, 1)
+        input_data = conv2d(input_data, 256, 3)
+        input_data = conv2d(input_data, 128, 1)
+        input_data = conv2d(input_data, 256, 3)
+        input_data = conv2d(input_data, 128, 1)
 
-        with tf.variable_scope('route_2'):
-            input_data = tf.concat([input_data, route_1], axis=-1)
-
-        input_data = conv2d(input_data, (1, 1, 384, 128), self.is_train, scope='conv64')
-        input_data = conv2d(input_data, (3, 3, 128, 256), self.is_train, scope='conv65')
-        input_data = conv2d(input_data, (1, 1, 256, 128), self.is_train, scope='conv66')
-        input_data = conv2d(input_data, (3, 3, 128, 256), self.is_train, scope='conv67')
-        input_data = conv2d(input_data, (1, 1, 256, 128), self.is_train, scope='conv68')
-
-        conv_sobj_branch = conv2d(input_data, (3, 3, 128, 256), self.is_train, scope='conv_sobj_branch')
-        conv_sbbox = conv2d(conv_sobj_branch, (1, 1, 256, 3 * (self.class_num + 5)), trainable=self.is_train, scope='conv_sbbox', activate=False, bn=False)
+        conv_sobj_branch = conv2d(input_data, 256, 3)
+        conv_sbbox = slim.conv2d(conv_sobj_branch, 3 * (5 + self.class_num), 1, stride=1, normalizer_fn=None, activation_fn=None, biases_initializer=tf.glorot_uniform_initializer())
+        conv_sbbox = tf.identity(conv_sbbox, name='conv_sbbox')
 
         return conv_lbbox, conv_mbbox, conv_sbbox
 
-    def build_network(self, inputs, scope='yolo_v3'):
+    def build_network(self, inputs, reuse=False, scope='yolo_v3'):
         """
         定义前向传播过程
         :param inputs:待输入的样本图片
         :param scope: 命名空间
         :return: 三个不同尺度的检测层输出
         """
-        route_1, route_2, input_data = self.darknet53(inputs, self.is_train)
+        batch_norm_params = {
+            'decay': self.batch_norm_decay,
+            'epsilon': 1e-05,
+            'scale': True,
+            'is_training': self.is_train,
+            'fused': None,  # Use fused batch norm if possible.
+        }
 
-        conv_lbbox, conv_mbbox, conv_sbbox = self.detect_head(route_1, route_2, input_data)
+        with slim.arg_scope([slim.conv2d, slim.batch_norm], reuse=reuse):
+            with slim.arg_scope([slim.conv2d],
+                                normalizer_fn=slim.batch_norm,
+                                normalizer_params=batch_norm_params,
+                                biases_initializer=None,
+                                activation_fn=lambda x: tf.nn.leaky_relu(x, alpha=0.1),
+                                weights_regularizer=slim.l2_regularizer(self.weight_decay)):
+                with tf.variable_scope('darknet53'):
+                    route_1, route_2, route_3 = self.darknet53(inputs)
 
-        return conv_lbbox, conv_mbbox, conv_sbbox
+                with tf.variable_scope('detect_head'):
+                    conv_lbbox, conv_mbbox, conv_sbbox = self.detect_head(route_1, route_2, route_3)
 
-    def inference(self, inputs, scope='inference'):
-        route_1, route_2, input_data = self.darknet53(inputs, self.is_train)
-        conv_lbbox, conv_mbbox, conv_sbbox = self.detect_head(route_1, route_2, input_data)
+            return conv_lbbox, conv_mbbox, conv_sbbox
+
+    def inference(self, feature_maps):
+        conv_lbbox, conv_mbbox, conv_sbbox = feature_maps
+
         feature_map_anchors = [(conv_sbbox, self.anchors[6:9]),
                                (conv_mbbox, self.anchors[3:6]),
                                (conv_lbbox, self.anchors[0:3])]

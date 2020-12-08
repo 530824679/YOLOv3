@@ -10,15 +10,21 @@
 import random
 import numpy as np
 import tensorflow as tf
+from model.network import Network
 
-def load_weight(var_list, weights_file):
+def load_weights(var_list, weights_file):
     """
-    loads and converts pre-trained weight
+    loads and converts pre-trained weight，the first 5 values correspond to
+    major version (4 bytes)
+    minor version (4 bytes)
+    revision      (4 bytes)
+    images seen   (8 bytes)
     :param var_list:  list of network variables
     :param weights_file: name of the binary file
     :return:
     """
     with open(weights_file, 'rb') as fp:
+        # skip first 5 values
         np.fromfile(fp, dtype=np.int32, count=5)
         weights = np.fromfile(fp, dtype=np.float32)
 
@@ -65,8 +71,28 @@ def load_weight(var_list, weights_file):
             i += 1
     return assign_ops
 
+def convert():
+    num_class = 80
+    image_size = 416
+    anchors = [[676,197], [763,250], [684,283],
+               [868,231], [745,273], [544,391],
+               [829,258], [678,316, 713,355]]
+    weight_path = './weights/yolov3.weights'
+    save_path = './weights/yolov3.ckpt'
 
+    model = Network(num_class, anchors, False)
+    with tf.Session() as sess:
+        inputs = tf.placeholder(tf.float32, [1, image_size, image_size, 3])
 
+        with tf.variable_scope('yolov3'):
+            feature_map = model.build_network(inputs)
 
+        saver = tf.train.Saver(var_list=tf.global_variables(scope='yolov3'))
 
+        load_ops = load_weights(tf.global_variables(scope='yolov3'), weight_path)
+        sess.run(load_ops)
+        saver.save(sess, save_path=save_path)
+        print('TensorFlow model checkpoint has been saved to {}'.format(save_path))
 
+if __name__ == '__main__':
+    convert()

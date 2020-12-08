@@ -103,7 +103,6 @@ class TFRecord(object):
 
         # preprocess
         tf_image, y_true_13, y_true_26, y_true_52 = tf.py_func(self.dataset.preprocess_data, inp=[tf_image, tf_label, self.input_height, self.input_width], Tout=[tf.uint8, tf.float32, tf.float32, tf.float32])
-        tf_image = tf.cast(tf_image, tf.float32) / 255.0
 
         return tf_image, y_true_13, y_true_26, y_true_52
 

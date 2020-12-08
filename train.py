@@ -46,8 +46,9 @@ def train():
     y_true = [y_true_13, y_true_26, y_true_52]
 
     # 构建网络
-    model = network.Network(is_train=True)
-    logits = model.build_network(inputs, "YOLOv3")
+    model = network.Network(len(model_params['classes']), model_params['anchors'], is_train=True)
+    with tf.variable_scope('yolov3'):
+        logits = model.build_network(inputs)
 
     # 计算损失函数
     loss = model.calc_loss(logits, y_true)
