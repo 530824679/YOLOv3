@@ -14,6 +14,13 @@ import cv2
 import random
 import colorsys
 import numpy as np
+import tensorflow as tf
+
+def total_sample(file_name):
+    sample_nums = 0
+    for record in tf.python_io.tf_record_iterator(file_name):
+        sample_nums += 1
+    return sample_nums
 
 def calc_iou_wh(box1_wh, box2_wh):
     """
@@ -59,20 +66,7 @@ def calculate_iou(box_1, box_2):
 
     return iou
 
-def bboxes_cut(bbox_min_max, bboxes):
-    bboxes = np.copy(bboxes)
-    bboxes = np.transpose(bboxes)
-    bbox_min_max = np.transpose(bbox_min_max)
-
-    # cut the box
-    bboxes[0] = np.maximum(bboxes[0],bbox_min_max[0]) # xmin
-    bboxes[1] = np.maximum(bboxes[1],bbox_min_max[1]) # ymin
-    bboxes[2] = np.minimum(bboxes[2],bbox_min_max[2]) # xmax
-    bboxes[3] = np.minimum(bboxes[3],bbox_min_max[3]) # ymax
-    bboxes = np.transpose(bboxes)
-    return bboxes
-
-def bboxes_sort(coords, scores, classes, top_k=150):
+def bboxes_sort(coords, scores, classes, top_k=100):
     index = np.argsort(-scores)
     classes = classes[index][:top_k]
     scores = scores[index][:top_k]
@@ -160,20 +154,22 @@ def soft_non_maximum_suppression(classes, scores, bboxes, sigma=0.3):
 
     return best_results
 
-def postprocess(bboxes, obj_probs, class_probs, image_shape=(416,416), threshold=0.5):
+def postprocess(bboxes, obj_probs, class_probs, image_shape=(416,416), input_shape=(416, 416), threshold=0.5):
     # boxes shape——> [num, 4]
     bboxes = np.reshape(bboxes, [-1, 4])
 
-    # 将box还原成图片中真实的位置
-    bboxes[:, 0:1] *= float(image_shape[1])  # xmin*width
-    bboxes[:, 1:2] *= float(image_shape[0])  # ymin*height
-    bboxes[:, 2:3] *= float(image_shape[1])  # xmax*width
-    bboxes[:, 3:4] *= float(image_shape[0])  # ymax*height
-    bboxes = bboxes.astype(np.int32)
+    image_height, image_width = image_shape
+    resize_ratio = min(input_shape[1] / image_width, input_shape[0] / image_height)
 
-    # 将边界框超出整张图片(0,0)—(415,415)的部分cut掉
-    bbox_min_max = [0, 0, image_shape[1] - 1, image_shape[0] - 1]
-    bboxes = bboxes_cut(bbox_min_max, bboxes)
+    dw = (input_shape[1] - resize_ratio * image_width) / 2
+    dh = (input_shape[0] - resize_ratio * image_height) / 2
+
+    bboxes[:, 0::2] = 1.0 * (bboxes[:, 0::2] - dw) / resize_ratio
+    bboxes[:, 1::2] = 1.0 * (bboxes[:, 1::2] - dh) / resize_ratio
+    bboxes[:, 0::2] = np.clip(bboxes[:, 0::2], 0, image_width)
+    bboxes[:, 1::2] = np.clip(bboxes[:, 1::2], 0, image_height)
+
+    bboxes = bboxes.astype(np.int32)
 
     # 置信度 * 类别条件概率 = 类别置信度scores
     obj_probs = np.reshape(obj_probs, [-1])
@@ -218,29 +214,6 @@ def preporcess(image, target_size, gt_boxes=None):
         gt_boxes[:, [0, 2]] = gt_boxes[:, [0, 2]] * scale + dw
         gt_boxes[:, [1, 3]] = gt_boxes[:, [1, 3]] * scale + dh
         return image_paded, gt_boxes
-
-def process(image, image_size=(416, 416)):
-    image_copy = np.copy(image).astype(np.float32)
-
-    # letter resize
-    image_height, image_width = image.shape[:2]
-    resize_ratio = min(image_size[0] / image_width, image_size[1] / image_height)
-    resize_width = int(resize_ratio * image_width)
-    resize_height = int(resize_ratio * image_height)
-
-    image_resized = cv2.resize(image_copy, (resize_width, resize_height), interpolation=0)
-    image_padded = np.full((image_size[0], image_size[1], 3), 128, np.uint8)
-
-    dw = int((image_size[0] - resize_width) / 2)
-    dh = int((image_size[1] - resize_height) / 2)
-
-    image_padded[dh:resize_height + dh, dw:resize_width + dw, :] = image_resized
-
-    image_normalized = image_padded.astype(np.float32) / 225.0
-
-    image_expanded = np.expand_dims(image_normalized, axis=0)
-
-    return image_expanded
 
 def visualization(im, bboxes, scores, cls_inds, labels, thr=0.02):
     # Generate colors for drawing bounding boxes.

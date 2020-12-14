@@ -145,9 +145,13 @@ class Network(object):
         reorg_results = [self.reorg_layer(feature_map, anchors) for (feature_map, anchors) in feature_map_anchors]
 
         def _reshape(result):
-            x_y_offset, boxes, conf_logits, prob_logits = result
-            grid_size = x_y_offset.get_shape().as_list()[:2]
-            boxes = tf.reshape(boxes, [-1, grid_size[0] * grid_size[1] * 3, 4])
+            bboxes_xy, bboxes_wh = result
+            bboxes = tf.concat([bboxes_xy, bboxes_wh], axis=-1)
+            conf_logits = tf.nn.sigmoid(feature_maps[:, :, :, :, 4:5])
+            prob_logits = tf.nn.softmax(feature_maps[:, :, :, :, 5:])
+
+            grid_size = feature_maps.get_shape().as_list()[1:3]
+            boxes = tf.reshape(bboxes, [-1, grid_size[0] * grid_size[1] * 3, 4])
             conf_logits = tf.reshape(conf_logits, [-1, grid_size[0] * grid_size[1] * 3, 1])
             prob_logits = tf.reshape(prob_logits, [-1, grid_size[0] * grid_size[1] * 3, self.class_num])
             # shape: (take 416*416 input image and feature_map_1 for example)
@@ -200,41 +204,33 @@ class Network(object):
         rescaled_anchors = [(anchor[0] / ratio[1], anchor[1] / ratio[0]) for anchor in anchors]
 
         # 网络输出转化——偏移量、置信度、类别概率
-        feature_maps = tf.reshape(feature_maps, [-1, feature_shape[0], feature_shape[1], anchor_per_scale, self.class_num + 5])
+        feature_maps = tf.reshape(feature_maps, [-1, feature_shape[0] * feature_shape[1], anchor_per_scale, self.class_num + 5])
         # 中心坐标相对于该cell左上角的偏移量，sigmoid函数归一化到0-1
-        xy_offset = tf.nn.sigmoid(feature_maps[..., 0:2])
+        xy_offset = tf.nn.sigmoid(feature_maps[:, :, :, 0:2])
         # 相对于anchor的wh比例，通过e指数解码
-        wh_offset = tf.clip_by_value(tf.exp(feature_maps[..., 2:4]), 1e-9, 50)
+        wh_offset = tf.clip_by_value(tf.exp(feature_maps[:, :, :, 2:4]), 1e-9, 50)
         # 置信度，sigmoid函数归一化到0-1
-        obj_probs = tf.nn.sigmoid(feature_maps[..., 4:5])
+        obj_probs = tf.nn.sigmoid(feature_maps[:, :, :, 4:5])
         # 网络回归的是得分,用softmax转变成类别概率
-        class_probs = tf.nn.softmax(feature_maps[..., 5:])
+        class_probs = tf.nn.softmax(feature_maps[:, :, :, 5:])
 
         # 构建特征图每个cell的左上角的xy坐标
         height_index = tf.range(feature_shape[0], dtype=tf.int32)
         width_index = tf.range(feature_shape[1], dtype=tf.int32)
         x_cell, y_cell = tf.meshgrid(height_index, width_index)
 
-        x_cell = tf.reshape(x_cell, [-1, 1])
-        y_cell = tf.reshape(y_cell, [-1, 1])
-        xy_cell = tf.concat([x_cell, y_cell], axis=-1)
-        # shape: [13, 13, 1, 2]
-        xy_cell = tf.cast(tf.reshape(xy_cell, [feature_shape[0], feature_shape[1], 1, 2]), tf.float32)
+        x_cell = tf.reshape(x_cell, [1, -1, 1])  # 和上面[H*W,num_anchors,num_class+5]对应
+        y_cell = tf.reshape(y_cell, [1, -1, 1])
+        xy_cell = tf.stack([x_cell, y_cell], axis=-1)
 
         # decode to raw image size
         bboxes_xy = (xy_cell + xy_offset) * ratio[::-1]
         bboxes_wh = (rescaled_anchors * wh_offset) * ratio[::-1]
 
-        if self.is_train == False:
-            # 转变成坐上-右下坐标
-            bboxes_xywh = tf.concat([bboxes_xy, bboxes_wh], axis=-1)
-            # bboxes_corners = tf.stack([bboxes_xywh[..., 0] - bboxes_xywh[..., 2] / 2,
-            #                            bboxes_xywh[..., 1] - bboxes_xywh[..., 3] / 2,
-            #                            bboxes_xywh[..., 0] + bboxes_xywh[..., 2] / 2,
-            #                            bboxes_xywh[..., 1] + bboxes_xywh[..., 3] / 2], axis=3)
-            # return bboxes_corners, obj_probs, class_probs
-            return xy_cell, bboxes_xywh, feature_maps[..., 4:5], feature_maps[..., 5:]
-        return xy_cell, feature_maps, bboxes_xy, bboxes_wh
+        bboxes_xy = tf.reshape(bboxes_xy, [-1, feature_shape[0], feature_shape[1], self.anchor_per_sacle, 2])
+        bboxes_wh = tf.reshape(bboxes_wh, [-1, feature_shape[0], feature_shape[1], self.anchor_per_sacle, 2])
+
+        return bboxes_xy, bboxes_wh
 
     def calc_loss(self, y_logit, y_true):
         '''
@@ -276,7 +272,9 @@ class Network(object):
         valid_true_box_wh = valid_true_boxes[:, 2:4]
 
         # predicts
-        xy_offset, predictions, pred_box_xy, pred_box_wh = self.reorg_layer(logits, anchors)
+        pred_box_xy, pred_box_wh = self.reorg_layer(logits, anchors)
+
+        predictions = tf.reshape(logits, [-1, feature_size[0], feature_size[1], self.anchor_per_sacle, self.class_num + 5])
         pred_conf_logits = predictions[:, :, :, :, 4:5]
         pred_prob_logits = predictions[:, :, :, :, 5:]
 
@@ -291,26 +289,11 @@ class Network(object):
         # get_ignore_mask shape: [N,13,13,5,1] 0,1张量
         ignore_mask = tf.expand_dims(tf.cast(best_iou < self.iou_threshold, tf.float32), -1)
 
-        # 图像尺寸归一化信息转换为特征图的单元格相对信息
-        # shape: [N, 13, 13, 3, 2]  # 坐标反归一化
-        true_xy = y_true[..., 0:2] / ratio[::-1] - xy_offset
-        pred_xy = pred_box_xy / ratio[::-1] - xy_offset
-
-        # shape: [N, 13, 13, 3, 2],
-        true_tw_th = y_true[..., 2:4] / anchors
-        pred_tw_th = pred_box_wh / anchors
-
-        # for numerical stability 稳定训练, 为0时不对anchors进行缩放, 在模型输出值特别小是e^out_put为0
-        true_tw_th = tf.where(condition=tf.equal(true_tw_th, 0), x=tf.ones_like(true_tw_th), y=true_tw_th)
-        pred_tw_th = tf.where(condition=tf.equal(pred_tw_th, 0), x=tf.ones_like(pred_tw_th), y=pred_tw_th)
-
-        true_tw_th = tf.log(tf.clip_by_value(true_tw_th, 1e-9, 1e9))
-        pred_tw_th = tf.log(tf.clip_by_value(pred_tw_th, 1e-9, 1e9))
-
         # shape: [N, 13, 13, 3, 1]
         box_loss_scale = 2. - (y_true[..., 2:3] / tf.cast(self.input_size[1], tf.float32)) * (y_true[..., 3:4] / tf.cast(self.input_size[0], tf.float32))
-        xy_loss = tf.square(true_xy - pred_xy) * object_masks * box_loss_scale
-        wh_loss = tf.square(true_tw_th - pred_tw_th) * object_masks * box_loss_scale
+        pred_xywh = tf.concat([pred_box_xy, pred_box_wh], axis=-1)
+        diou = tf.expand_dims(self.bbox_diou(pred_xywh, object_coords), axis=-1)
+        diou_loss = object_masks * box_loss_scale * (1 - diou)
 
         # shape: [N, 13, 13, 3, 1]
         conf_pos_mask = object_masks
@@ -331,12 +314,11 @@ class Network(object):
         # shape: [N, 13, 13, 3, 1]
         class_loss = object_masks * tf.nn.sigmoid_cross_entropy_with_logits(labels=label_target, logits=pred_prob_logits)
 
-        xy_loss = tf.reduce_mean(tf.reduce_sum(xy_loss, axis=[1, 2, 3, 4]))
-        wh_loss = tf.reduce_mean(tf.reduce_sum(wh_loss, axis=[1, 2, 3, 4]))
+        diou_loss = tf.reduce_mean(tf.reduce_sum(diou_loss, axis=[1, 2, 3, 4]))
         conf_loss = tf.reduce_mean(tf.reduce_sum(conf_loss, axis=[1, 2, 3, 4]))
         class_loss = tf.reduce_mean(tf.reduce_sum(class_loss, axis=[1, 2, 3, 4]))
 
-        return xy_loss, wh_loss, conf_loss, class_loss
+        return diou_loss, conf_loss, class_loss
 
     def broadcast_iou(self, true_box_xy, true_box_wh, pred_box_xy, pred_box_wh):
         # shape:

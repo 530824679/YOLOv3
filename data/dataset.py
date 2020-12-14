@@ -79,25 +79,24 @@ class Dataset(object):
         return classes_map[type]
 
     def preprocess_data(self, image, boxes, input_height, input_width):
+        image = np.array(image)
+
+        image, boxes = random_horizontal_flip(image, boxes)
+        image, labels = random_crop(image, boxes)
+        image, boxes = random_translate(image, boxes)
+        image = random_color_distort(image)
+
+        image_rgb = cv2.cvtColor(np.copy(image), cv2.COLOR_BGR2RGB).astype(np.float32)
+        image_rgb, labels = letterbox_resize(image_rgb, (input_height, input_width), np.copy(labels), interp=0)
+        image_norm = image_rgb / 255.
+
         # labels 去除空标签
         valid = (np.sum(boxes, axis=-1) > 0).tolist()
         boxes = boxes[valid]
 
-        # random color jittering
-        image = random_color_distort(image)
-
-        # random translate
-        image, boxes = random_translate(image, boxes)
-
-        # random horizontal flip
-        image, boxes = random_horizontal_flip(image, boxes)
-
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
-        image = image / 255.
-
         y_true_13, y_true_26, y_true_52 = self.preprocess_true_boxes(boxes, input_height, input_width, self.anchors, self.class_num)
 
-        return image, y_true_13, y_true_26, y_true_52
+        return image_norm, y_true_13, y_true_26, y_true_52
 
     def preprocess_true_boxes(self, labels, input_height, input_width, anchors, num_classes):
         """
