@@ -7,6 +7,7 @@
 # Description : process weight
 # --------------------------------------
 
+import os
 import random
 import numpy as np
 import tensorflow as tf
@@ -71,21 +72,21 @@ def load_weights(var_list, weights_file):
             i += 1
     return assign_ops
 
-def convert():
+def weights_to_ckpt():
     num_class = 80
     image_size = 416
     anchors = [[676,197], [763,250], [684,283],
                [868,231], [745,273], [544,391],
                [829,258], [678,316, 713,355]]
-    weight_path = './weights/yolov3.weights'
-    save_path = './weights/yolov3.ckpt'
+    weight_path = '../weights/yolov3.weights'
+    save_path = '../weights/yolov3.ckpt'
 
     model = Network(num_class, anchors, False)
     with tf.Session() as sess:
         inputs = tf.placeholder(tf.float32, [1, image_size, image_size, 3])
 
         with tf.variable_scope('yolov3'):
-            feature_map = model.build_network(inputs)
+            feature_maps = model.build_network(inputs)
 
         saver = tf.train.Saver(var_list=tf.global_variables(scope='yolov3'))
 
@@ -94,5 +95,29 @@ def convert():
         saver.save(sess, save_path=save_path)
         print('TensorFlow model checkpoint has been saved to {}'.format(save_path))
 
+def remove_optimizers_params():
+    ckpt_path = ''
+    class_num = 2
+    save_dir = 'shrinked_ckpt'
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    anchors = [[676, 197], [763, 250], [684, 283],
+               [868, 231], [745, 273], [544, 391],
+               [829, 258], [678, 316, 713, 355]]
+
+    image = tf.placeholder(tf.float32, [1, 416, 416, 3])
+    model = Network(class_num, anchors, False)
+    with tf.variable_scope('yolov3'):
+        feature_maps = model.build_network(image)
+
+    saver_to_restore = tf.train.Saver()
+    saver_to_save = tf.train.Saver()
+
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        saver_to_restore.restore(sess, ckpt_path)
+        saver_to_save.save(sess, save_dir + '/shrinked')
+
 if __name__ == '__main__':
-    convert()
+    weights_to_ckpt()

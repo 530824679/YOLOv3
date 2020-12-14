@@ -104,7 +104,7 @@ class TFRecord(object):
         tf_label = tf.reshape(tf_bbox, [300, 5])
 
         # preprocess
-        tf_image, y_true_13, y_true_26, y_true_52 = tf.py_func(self.dataset.preprocess_data, inp=[tf_image, tf_label, self.input_height, self.input_width], Tout=[tf.uint8, tf.float32, tf.float32, tf.float32])
+        tf_image, y_true_13, y_true_26, y_true_52 = tf.py_func(self.dataset.preprocess_data, inp=[tf_image, tf_label, self.input_height, self.input_width], Tout=[tf.float32, tf.float32, tf.float32, tf.float32])
 
         return tf_image, y_true_13, y_true_26, y_true_52
 
