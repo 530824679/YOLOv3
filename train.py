@@ -115,7 +115,7 @@ def train():
             train_epoch_loss, train_epoch_xy_loss, train_epoch_wh_loss, train_epoch_confs_loss, train_epoch_class_loss = [], [], [], [], []
             for index in tqdm(range(batch_num)):
                 _, summary_, loss_, xy_loss_, wh_loss_, confs_loss_, class_loss_, global_step_, lr = sess.run([train_op, summary_op, loss[0], loss[1], loss[2], loss[3], loss[4], global_step, learning_rate])
-                print("Epoch: {}, global_step: {}, lr: {:.8f}, total_loss: {:.3f}, diou_loss: {:.3f}, confs_loss: {:.3f}, class_loss: {:.3f}".format(
+                print("Epoch: {}, global_step: {}, lr: {:.8f}, total_loss: {:.3f}, xy_loss: {:.3f}, wh_loss: {:.3f}, confs_loss: {:.3f}, class_loss: {:.3f}".format(
                         epoch, global_step_, lr, loss_, xy_loss_, wh_loss_, confs_loss_, class_loss_))
 
                 train_epoch_loss.append(loss_)
