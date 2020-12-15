@@ -283,7 +283,7 @@ class Network(object):
         ignore_mask = tf.expand_dims(tf.cast(best_iou < self.iou_threshold, tf.float32), -1)
 
         # shape: [N, 13, 13, 3, 1]
-        box_loss_scale = 2. - (y_true[..., 2:3] / tf.cast(self.input_size[1], tf.float32)) * (y_true[..., 3:4] / tf.cast(self.input_size[0], tf.float32))
+        box_loss_scale = 2. - (1.0 * y_true[..., 2:3] / tf.cast(self.input_size[1], tf.float32)) * (1.0 * y_true[..., 3:4] / tf.cast(self.input_size[0], tf.float32))
         diou = tf.expand_dims(self.bbox_diou(bboxes_xywh, object_coords), axis=-1)
         diou_loss = object_masks * box_loss_scale * (1 - diou)
 
