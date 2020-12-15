@@ -80,9 +80,10 @@ def train():
 
     tf.summary.scalar("learning_rate", learning_rate)
     tf.summary.scalar('total_loss', loss[0])
-    tf.summary.scalar('loss_diou', loss[1])
-    tf.summary.scalar('loss_conf', loss[2])
-    tf.summary.scalar('loss_class', loss[3])
+    tf.summary.scalar('loss_xy', loss[1])
+    tf.summary.scalar('loss_wh', loss[2])
+    tf.summary.scalar('loss_conf', loss[3])
+    tf.summary.scalar('loss_class', loss[4])
 
     # 配置tensorboard
     summary_op = tf.summary.merge_all()
@@ -111,21 +112,22 @@ def train():
         summary_writer.add_graph(sess.graph)
 
         for epoch in range(start_step + 1, solver_params['total_epoches']):
-            train_epoch_loss, train_epoch_diou_loss, train_epoch_confs_loss, train_epoch_class_loss = [], [], [], []
+            train_epoch_loss, train_epoch_xy_loss, train_epoch_wh_loss, train_epoch_confs_loss, train_epoch_class_loss = [], [], [], [], []
             for index in tqdm(range(batch_num)):
-                _, summary_, loss_, diou_loss_, confs_loss_, class_loss_, global_step_, lr = sess.run([train_op, summary_op, loss[0], loss[1], loss[2],loss[3], global_step, learning_rate])
+                _, summary_, loss_, xy_loss_, wh_loss_, confs_loss_, class_loss_, global_step_, lr = sess.run([train_op, summary_op, loss[0], loss[1], loss[2], loss[3], loss[4], global_step, learning_rate])
                 print("Epoch: {}, global_step: {}, lr: {:.8f}, total_loss: {:.3f}, diou_loss: {:.3f}, confs_loss: {:.3f}, class_loss: {:.3f}".format(
-                        epoch, global_step_, lr, loss_, diou_loss_, confs_loss_, class_loss_))
+                        epoch, global_step_, lr, loss_, xy_loss_, wh_loss_, confs_loss_, class_loss_))
 
                 train_epoch_loss.append(loss_)
-                train_epoch_diou_loss.append(diou_loss_)
+                train_epoch_xy_loss.append(xy_loss_)
+                train_epoch_wh_loss.append(wh_loss_)
                 train_epoch_confs_loss.append(confs_loss_)
                 train_epoch_class_loss.append(class_loss_)
 
                 summary_writer.add_summary(summary_, global_step_)
 
-            train_epoch_loss, train_epoch_diou_loss, train_epoch_confs_loss, train_epoch_class_loss = np.mean(train_epoch_loss), np.mean(train_epoch_diou_loss), np.mean(train_epoch_confs_loss), np.mean(train_epoch_class_loss)
-            print("Epoch: {}, global_step: {}, lr: {:.8f}, total_loss: {:.3f}, diou_loss: {:.3f}, confs_loss: {:.3f}, class_loss: {:.3f}".format(epoch, global_step_, lr, train_epoch_loss, train_epoch_diou_loss, train_epoch_confs_loss, train_epoch_class_loss))
+            train_epoch_loss, train_epoch_xy_loss, train_epoch_wh_loss, train_epoch_confs_loss, train_epoch_class_loss = np.mean(train_epoch_loss), np.mean(train_epoch_xy_loss), np.mean(train_epoch_wh_loss),np.mean(train_epoch_confs_loss), np.mean(train_epoch_class_loss)
+            print("Epoch: {}, global_step: {}, lr: {:.8f}, total_loss: {:.3f}, xy_loss: {:.3f}, wh_loss: {:.3f},confs_loss: {:.3f}, class_loss: {:.3f}".format(epoch, global_step_, lr, train_epoch_loss, train_epoch_xy_loss, train_epoch_wh_loss, train_epoch_confs_loss, train_epoch_class_loss))
             saver_to_restore.save(sess, os.path.join(checkpoint_dir, checkpoints_name), global_step=epoch)
 
         sess.close()

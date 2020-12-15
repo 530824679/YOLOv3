@@ -233,17 +233,18 @@ class Network(object):
         :param y_logit: function: [feature_map_1, feature_map_2, feature_map_3]
         :param y_true: input y_true by the tf.data pipeline
         '''
-        loss_diou, loss_conf, loss_class = 0., 0., 0.
+        loss_xy, loss_wh, loss_conf, loss_class = 0., 0., 0., 0.
         anchor_group = [self.anchors[6:9], self.anchors[3:6], self.anchors[0:3]]
 
         for i in range(len(y_logit)):
             result = self.loss_layer(y_logit[i], y_true[i], anchor_group[i])
-            loss_diou += result[0]
-            loss_conf += result[1]
-            loss_class += result[2]
-        total_loss = loss_diou + loss_conf + loss_class
+            loss_xy += result[0]
+            loss_wh += result[1]
+            loss_conf += result[2]
+            loss_class += result[3]
+        total_loss = loss_xy + loss_wh + loss_conf + loss_class
 
-        return [total_loss, loss_diou, loss_conf, loss_class]
+        return [total_loss, loss_xy, loss_wh, loss_conf, loss_class]
 
     def loss_layer(self, logits, y_true, anchors):
         '''
@@ -284,8 +285,19 @@ class Network(object):
 
         # shape: [N, 13, 13, 3, 1]
         box_loss_scale = 2. - (1.0 * y_true[..., 2:3] / tf.cast(self.input_size[1], tf.float32)) * (1.0 * y_true[..., 3:4] / tf.cast(self.input_size[0], tf.float32))
-        diou = tf.expand_dims(self.box_ciou(bboxes_xywh, object_coords), axis=-1)
-        diou_loss = object_masks * box_loss_scale * (1 - diou)
+
+        true_xy = y_true[..., 0:2] / ratio[::-1] - xy_cell
+        pred_xy = pred_box_xy / ratio[::-1] - xy_cell
+
+        true_tw_th = y_true[..., 2:4] / anchors
+        pred_tw_th = pred_box_wh / anchors
+        true_tw_th = tf.where(condition=tf.equal(true_tw_th, 0), x=tf.ones_like(true_tw_th), y=true_tw_th)
+        pred_tw_th = tf.where(condition=tf.equal(pred_tw_th, 0), x=tf.ones_like(pred_tw_th), y=pred_tw_th)
+        true_tw_th = tf.log(tf.clip_by_value(true_tw_th, 1e-9, 1e9))
+        pred_tw_th = tf.log(tf.clip_by_value(pred_tw_th, 1e-9, 1e9))
+
+        xy_loss = tf.square(true_xy - pred_xy) * object_masks * box_loss_scale
+        wh_loss = tf.square(true_tw_th - pred_tw_th) * object_masks * box_loss_scale
 
         # shape: [N, 13, 13, 3, 1]
         conf_pos_mask = object_masks
@@ -307,11 +319,12 @@ class Network(object):
         #shape: [N, 13, 13, 3, 1]
         class_loss = object_masks * tf.nn.sigmoid_cross_entropy_with_logits(labels=label_target, logits=pred_prob_logits)
 
-        diou_loss = tf.reduce_mean(tf.reduce_sum(diou_loss, axis=[1, 2, 3, 4]))
+        xy_loss = tf.reduce_mean(tf.reduce_sum(xy_loss, axis=[1, 2, 3, 4]))
+        wh_loss = tf.reduce_mean(tf.reduce_sum(wh_loss, axis=[1, 2, 3, 4]))
         conf_loss = tf.reduce_mean(tf.reduce_sum(conf_loss, axis=[1, 2, 3, 4]))
         class_loss = tf.reduce_mean(tf.reduce_sum(class_loss, axis=[1, 2, 3, 4]))
 
-        return diou_loss, conf_loss, class_loss
+        return xy_loss, wh_loss, conf_loss, class_loss
 
     def broadcast_iou(self, true_box_xy, true_box_wh, pred_box_xy, pred_box_wh):
         # shape:
