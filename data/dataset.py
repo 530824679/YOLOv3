@@ -86,8 +86,8 @@ class Dataset(object):
         #image, boxes = random_translate(image, boxes)
         #image = random_color_distort(image)
 
+        image, boxes = letterbox_resize(image, (input_height, input_width), np.copy(boxes), interp=0)
         image_rgb = cv2.cvtColor(np.copy(image), cv2.COLOR_BGR2RGB).astype(np.float32)
-        image_rgb, boxes = letterbox_resize(image_rgb, (input_height, input_width), np.copy(boxes), interp=0)
         image_norm = image_rgb / 255.
 
         # boxes 去除空标签
@@ -132,7 +132,7 @@ class Dataset(object):
         # [N, 1, 2]
         valid_mask = boxes_wh[:, 0] > 0
         wh = boxes_wh[valid_mask]
-        wh = np.expand_dims(wh, -2)
+        wh = np.expand_dims(wh, 1)
 
         boxes_max = wh / 2.
         boxes_min = - wh / 2.

@@ -73,7 +73,7 @@ class Network(object):
         input_data = conv2d(input_data, 512, 1)
 
         conv_lobj_branch = conv2d(input_data, 1024, 3)
-        conv_lbbox = slim.conv2d(conv_lobj_branch, 3 * (self.class_num + 5), 1, stride=1, normalizer_fn=None, activation_fn=None, biases_initializer=tf.glorot_uniform_initializer())
+        conv_lbbox = slim.conv2d(conv_lobj_branch, 3 * (self.class_num + 5), 1, stride=1, normalizer_fn=None, activation_fn=None, biases_initializer=tf.zeros_initializer())
         conv_lbbox = tf.identity(conv_lbbox, name='conv_lbbox')
 
         input_data = conv2d(input_data, 256, 1)
@@ -87,7 +87,7 @@ class Network(object):
         input_data = conv2d(input_data, 256, 1)
 
         conv_mobj_branch = conv2d(input_data, 512, 3)
-        conv_mbbox = slim.conv2d(conv_mobj_branch, 3 * (5 + self.class_num), 1, stride=1, normalizer_fn=None, activation_fn=None, biases_initializer=tf.glorot_uniform_initializer())
+        conv_mbbox = slim.conv2d(conv_mobj_branch, 3 * (5 + self.class_num), 1, stride=1, normalizer_fn=None, activation_fn=None, biases_initializer=tf.zeros_initializer())
         conv_mbbox = tf.identity(conv_mbbox, name='conv_mbbox')
 
         input_data = conv2d(input_data, 128, 1)
@@ -101,7 +101,7 @@ class Network(object):
         input_data = conv2d(input_data, 128, 1)
 
         conv_sobj_branch = conv2d(input_data, 256, 3)
-        conv_sbbox = slim.conv2d(conv_sobj_branch, 3 * (5 + self.class_num), 1, stride=1, normalizer_fn=None, activation_fn=None, biases_initializer=tf.glorot_uniform_initializer())
+        conv_sbbox = slim.conv2d(conv_sobj_branch, 3 * (5 + self.class_num), 1, stride=1, normalizer_fn=None, activation_fn=None, biases_initializer=tf.zeros_initializer())
         conv_sbbox = tf.identity(conv_sbbox, name='conv_sbbox')
 
         return conv_lbbox, conv_mbbox, conv_sbbox

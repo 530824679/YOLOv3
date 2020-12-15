@@ -45,10 +45,10 @@ solver_params = {
     'decay_steps': 5000,            # 衰变步数
     'decay_rate': 0.95,             # 衰变率
     'staircase': True,
-    'batch_size': 8,               # 每批次输入的数据个数
-    'total_epoches': 1000,          # 训练的最大迭代次数
+    'batch_size': 16,               # 每批次输入的数据个数
+    'total_epoches': 500,          # 训练的最大迭代次数
     'save_step': 1000,              # 权重保存间隔
-    'weight_decay': 0.0001,         # 正则化系数
+    'weight_decay': 5e-4,         # 正则化系数
     'restore': False,               # 支持restore
     'pre_train': False
 }
