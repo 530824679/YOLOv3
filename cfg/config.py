@@ -19,11 +19,12 @@ path_params = {
     'train_tfrecord_name': 'train.tfrecord',
     'test_output_dir': './test'
 }
-
+from utils.process_utils import *
 model_params = {
     'input_height': 416,                                # 图片高度
     'input_width': 416,                                 # 图片宽度
     'channels': 3,                                      # 输入图片通道数
+    #'anchors': [[10,13], [16,30], [33,23], [30,61], [62,45], [59,119], [116,90],  [156,198],  [373,326]],
     'anchors': [[11,13], [15,17], [17,21],
                [22,25], [27,32], [37,43],
                [57,65], [104,121], [229,266]],
@@ -58,4 +59,4 @@ test_params = {
     'max_output_size': 10           # nms选择的边界框最大数量
 }
 
-classes_map = {'person': 0, 'hat': 1}
+classes_map = {0: 'persion', 1: 'hat'}

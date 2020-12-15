@@ -71,7 +71,7 @@ def random_expand(image, bboxes, max_ratio=3, fill=0, keep_ratio=True):
 
     return dst, bboxes
 
-def letterbox_resize(image, target_size, bboxes, interp=0):
+def letterbox_resize(image, target_size, bboxes=None, interp=0):
     """
     Resize the image and correct the bbox accordingly.
     :param image: BGR image data shape is [height, width, channel]

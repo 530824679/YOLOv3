@@ -16,6 +16,13 @@ import colorsys
 import numpy as np
 import tensorflow as tf
 
+def read_class_names(class_name_path):
+    names = {}
+    with open(class_name_path, 'r') as data:
+        for ID, name in enumerate(data):
+            names[ID] = name.strip('\n')
+    return names
+
 def total_sample(file_name):
     sample_nums = 0
     for record in tf.python_io.tf_record_iterator(file_name):
@@ -154,21 +161,9 @@ def soft_non_maximum_suppression(classes, scores, bboxes, sigma=0.3):
 
     return best_results
 
-def postprocess(bboxes, obj_probs, class_probs, image_shape=(416,416), input_shape=(416, 416), threshold=0.5):
+def postprocess(bboxes, obj_probs, class_probs, image_shape=(416,416), input_shape=(416, 416), threshold=0.45):
     # boxes shape——> [num, 4]
     bboxes = np.reshape(bboxes, [-1, 4])
-
-    image_height, image_width = image_shape
-    resize_ratio = min(input_shape[1] / image_width, input_shape[0] / image_height)
-
-    dw = (input_shape[1] - resize_ratio * image_width) / 2
-    dh = (input_shape[0] - resize_ratio * image_height) / 2
-
-    bboxes[:, 0::2] = 1.0 * (bboxes[:, 0::2] - dw) / resize_ratio
-    bboxes[:, 1::2] = 1.0 * (bboxes[:, 1::2] - dh) / resize_ratio
-    bboxes[:, 0::2] = np.clip(bboxes[:, 0::2], 0, image_width)
-    bboxes[:, 1::2] = np.clip(bboxes[:, 1::2], 0, image_height)
-
     bboxes = bboxes.astype(np.int32)
 
     # 置信度 * 类别条件概率 = 类别置信度scores
@@ -215,7 +210,7 @@ def preporcess(image, target_size, gt_boxes=None):
         gt_boxes[:, [1, 3]] = gt_boxes[:, [1, 3]] * scale + dh
         return image_paded, gt_boxes
 
-def visualization(im, bboxes, scores, cls_inds, labels, thr=0.02):
+def visualization(im, bboxes, scores, cls_inds, labels, thr=0.5):
     # Generate colors for drawing bounding boxes.
     hsv_tuples = [(x / float(len(labels)), 1., 1.) for x in range(len(labels))]
     colors = list(map(lambda x: colorsys.hsv_to_rgb(*x), hsv_tuples))
@@ -234,12 +229,12 @@ def visualization(im, bboxes, scores, cls_inds, labels, thr=0.02):
         cls_indx = cls_inds[i]
 
         thick = int((h + w) / 300)
-        cv2.rectangle(imgcv, (box[0], box[1]), (box[2], box[3]), colors[cls_indx], thick)
+        cv2.rectangle(imgcv, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), colors[cls_indx], thick)
         mess = '%s: %.3f' % (labels[cls_indx], scores[i])
         if box[1] < 20:
-            text_loc = (box[0] + 2, box[1] + 15)
+            text_loc = (int(box[0]) + 2, int(box[1]) + 15)
         else:
-            text_loc = (box[0], box[1] - 10)
+            text_loc = (int(box[0]), int(box[1]) - 10)
         cv2.putText(imgcv, mess, text_loc, cv2.FONT_HERSHEY_SIMPLEX, 1e-3 * h, (255, 255, 255), thick // 3)
     cv2.imshow("test", imgcv)
     cv2.waitKey(0)

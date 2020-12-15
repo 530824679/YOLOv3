@@ -53,24 +53,29 @@ def train():
     y_true = [y_true_13, y_true_26, y_true_52]
 
     # 构建网络
-    model = network.Network(len(model_params['classes']), model_params['anchors'], is_train=True)
-    logits = model.build_network(inputs)
+    with tf.variable_scope('yolov3'):
+        model = network.Network(len(model_params['classes']), model_params['anchors'], is_train=True)
+        logits = model.build_network(inputs)
 
     # 计算损失函数
     loss = model.calc_loss(logits, y_true)
+    l2_loss = tf.losses.get_regularization_loss()
 
-    # restore_include = None
-    # restore_exclude = ['yolov3/yolov3_head/Conv_14', 'yolov3/yolov3_head/Conv_6', 'yolov3/yolov3_head/Conv_22']
-    # update_part = ['yolov3/yolov3_head']
-    # saver_to_restore = tf.train.Saver(var_list=tf.contrib.framework.get_variables_to_restore(include=restore_include, exclude=restore_exclude))
-    # update_vars = tf.contrib.framework.get_variables_to_restore(include=update_part)
+    restore_include = None
+    restore_exclude = ['yolov3/yolov3_head/Conv_14', 'yolov3/yolov3_head/Conv_6', 'yolov3/yolov3_head/Conv_22']
+    update_part = ['yolov3/yolov3_head']
+    saver_to_restore = tf.train.Saver(var_list=tf.contrib.framework.get_variables_to_restore(include=restore_include, exclude=restore_exclude))
+    update_vars = tf.contrib.framework.get_variables_to_restore(include=update_part)
 
-    global_step = tf.Variable(0, trainable=False)
+    global_step = tf.Variable(float(0), trainable=False, collections=[tf.GraphKeys.LOCAL_VARIABLES])
     learning_rate = tf.train.exponential_decay(solver_params['lr'], global_step, solver_params['decay_steps'], solver_params['decay_rate'], staircase=True)
     optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(update_ops):
-        train_op = optimizer.minimize(loss[0], global_step=global_step)
+        #train_op = optimizer.minimize(loss[0] + l2_loss, var_list=update_vars, global_step=global_step)
+        gvs = optimizer.compute_gradients(loss[0] + l2_loss, var_list=update_vars)
+        clip_grad_var = [gv if gv[0] is None else [tf.clip_by_norm(gv[0], 100.), gv[1]] for gv in gvs]
+        train_op = optimizer.apply_gradients(clip_grad_var, global_step=global_step)
 
     tf.summary.scalar("learning_rate", learning_rate)
     tf.summary.scalar('total_loss', loss[0])
@@ -106,6 +111,8 @@ def train():
             train_epoch_loss, train_epoch_diou_loss, train_epoch_confs_loss, train_epoch_class_loss = [], [], [], []
             for index in tqdm(range(batch_num)):
                 _, summary_, loss_, diou_loss_, confs_loss_, class_loss_, global_step_, lr = sess.run([train_op, summary_op, loss[0], loss[1], loss[2],loss[3], global_step, learning_rate])
+                print("Epoch: {}, global_step: {}, lr: {:.8f}, total_loss: {:.3f}, diou_loss: {:.3f}, confs_loss: {:.3f}, class_loss: {:.3f}".format(
+                        epoch, global_step_, lr, loss_, diou_loss_, confs_loss_, class_loss_))
 
                 train_epoch_loss.append(loss_)
                 train_epoch_diou_loss.append(diou_loss_)
