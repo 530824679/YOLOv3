@@ -204,31 +204,27 @@ class Network(object):
         rescaled_anchors = [(anchor[0] / ratio[1], anchor[1] / ratio[0]) for anchor in anchors]
 
         # 网络输出转化——偏移量、置信度、类别概率
-        feature_maps = tf.reshape(feature_maps, [-1, feature_shape[0] * feature_shape[1], anchor_per_scale, self.class_num + 5])
+        feature_maps = tf.reshape(feature_maps, [tf.shape(feature_maps)[0], feature_shape[0], feature_shape[1], anchor_per_scale, self.class_num + 5])
         # 中心坐标相对于该cell左上角的偏移量，sigmoid函数归一化到0-1
-        xy_offset = tf.nn.sigmoid(feature_maps[:, :, :, 0:2])
+        xy_offset = tf.nn.sigmoid(feature_maps[:, :, :, :, 0:2])
         # 相对于anchor的wh比例，通过e指数解码
-        wh_offset = tf.clip_by_value(tf.exp(feature_maps[:, :, :, 2:4]), 1e-9, 50)
+        wh_offset = tf.clip_by_value(tf.exp(feature_maps[:, :, :, :, 2:4]), 1e-9, 50)
         # 置信度，sigmoid函数归一化到0-1
-        obj_probs = tf.nn.sigmoid(feature_maps[:, :, :, 4:5])
+        obj_probs = tf.nn.sigmoid(feature_maps[:, :, :, :, 4:5])
         # 网络回归的是得分,用softmax转变成类别概率
-        class_probs = tf.nn.softmax(feature_maps[:, :, :, 5:])
+        class_probs = tf.nn.softmax(feature_maps[:, :, :, :, 5:])
 
         # 构建特征图每个cell的左上角的xy坐标
         height_index = tf.range(tf.cast(feature_shape[0], tf.float32), dtype=tf.float32)
         width_index = tf.range(tf.cast(feature_shape[1], tf.float32), dtype=tf.float32)
-        x_cell, y_cell = tf.meshgrid(height_index, width_index)
-
-        x_cell = tf.reshape(x_cell, [1, -1, 1])
-        y_cell = tf.reshape(y_cell, [1, -1, 1])
-        xy_cell = tf.stack([x_cell, y_cell], axis=-1)
+        xy_cell = tf.meshgrid(height_index, width_index)
+        xy_cell = tf.expand_dims(tf.stack(xy_cell, axis=-1), axis=2)
+        xy_cell = tf.tile(tf.expand_dims(xy_cell, axis=0), [tf.shape(feature_maps)[0], 1, 1, anchor_per_scale, 1])
+        xy_cell = tf.cast(xy_cell, tf.float32)
 
         # decode to raw image size
         bboxes_xy = (xy_cell + xy_offset) * ratio[::-1]
         bboxes_wh = (rescaled_anchors * wh_offset) * ratio[::-1]
-
-        bboxes_xy = tf.reshape(bboxes_xy, [-1, feature_shape[0], feature_shape[1], self.anchor_per_sacle, 2])
-        bboxes_wh = tf.reshape(bboxes_wh, [-1, feature_shape[0], feature_shape[1], self.anchor_per_sacle, 2])
 
         return bboxes_xy, bboxes_wh
 
