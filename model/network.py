@@ -215,11 +215,11 @@ class Network(object):
         class_probs = tf.nn.softmax(feature_maps[:, :, :, 5:])
 
         # 构建特征图每个cell的左上角的xy坐标
-        height_index = tf.range(feature_shape[0], dtype=tf.int32)
-        width_index = tf.range(feature_shape[1], dtype=tf.int32)
+        height_index = tf.range(tf.cast(feature_shape[0], tf.float32), dtype=tf.float32)
+        width_index = tf.range(tf.cast(feature_shape[1], tf.float32), dtype=tf.float32)
         x_cell, y_cell = tf.meshgrid(height_index, width_index)
 
-        x_cell = tf.reshape(x_cell, [1, -1, 1])  # 和上面[H*W,num_anchors,num_class+5]对应
+        x_cell = tf.reshape(x_cell, [1, -1, 1])
         y_cell = tf.reshape(y_cell, [1, -1, 1])
         xy_cell = tf.stack([x_cell, y_cell], axis=-1)
 
@@ -237,18 +237,17 @@ class Network(object):
         :param y_logit: function: [feature_map_1, feature_map_2, feature_map_3]
         :param y_true: input y_true by the tf.data pipeline
         '''
-        loss_xy, loss_wh, loss_conf, loss_class = 0., 0., 0., 0.
+        loss_diou, loss_conf, loss_class = 0., 0., 0.
         anchor_group = [self.anchors[6:9], self.anchors[3:6], self.anchors[0:3]]
 
         for i in range(len(y_logit)):
             result = self.loss_layer(y_logit[i], y_true[i], anchor_group[i])
-            loss_xy += result[0]
-            loss_wh += result[1]
-            loss_conf += result[2]
-            loss_class += result[3]
-        total_loss = loss_xy + loss_wh + loss_conf + loss_class
+            loss_diou += result[0]
+            loss_conf += result[1]
+            loss_class += result[2]
+        total_loss = loss_diou + loss_conf + loss_class
 
-        return [total_loss, loss_xy, loss_wh, loss_conf, loss_class]
+        return [total_loss, loss_diou, loss_conf, loss_class]
 
     def loss_layer(self, logits, y_true, anchors):
         '''
@@ -302,17 +301,18 @@ class Network(object):
         conf_loss_pos = conf_pos_mask * tf.nn.sigmoid_cross_entropy_with_logits(labels=object_masks, logits=pred_conf_logits)
         conf_loss_neg = conf_neg_mask * tf.nn.sigmoid_cross_entropy_with_logits(labels=object_masks, logits=pred_conf_logits)
         conf_loss = conf_loss_pos + conf_loss_neg
+
         # focal_loss
-        alpha = 1.0
-        gamma = 2.0
-        focal_mask = alpha * tf.pow(tf.abs(object_masks - tf.sigmoid(pred_conf_logits)), gamma)
-        conf_loss = conf_loss * focal_mask
+        # alpha = 1.0
+        # gamma = 2.0
+        # focal_mask = alpha * tf.pow(tf.abs(object_masks - tf.sigmoid(pred_conf_logits)), gamma)
+        # conf_loss = conf_loss * focal_mask
 
         # label smooth
-        delta = 0.01
-        label_target = (1 - delta) * object_probs + delta * 1. / self.class_num
+        # delta = 0.01
+        # label_target = (1 - delta) * object_probs + delta * 1. / self.class_num
         # shape: [N, 13, 13, 3, 1]
-        class_loss = object_masks * tf.nn.sigmoid_cross_entropy_with_logits(labels=label_target, logits=pred_prob_logits)
+        class_loss = object_masks * tf.nn.sigmoid_cross_entropy_with_logits(labels=object_probs, logits=pred_prob_logits)
 
         diou_loss = tf.reduce_mean(tf.reduce_sum(diou_loss, axis=[1, 2, 3, 4]))
         conf_loss = tf.reduce_mean(tf.reduce_sum(conf_loss, axis=[1, 2, 3, 4]))

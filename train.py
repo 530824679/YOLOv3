@@ -23,7 +23,6 @@ from utils.process_utils import total_sample
 
 def train():
     start_step = 0
-    log_step = solver_params['log_step']
     restore = solver_params['restore']
     pre_train = solver_params['pre_train']
     checkpoint_dir = path_params['checkpoints_dir']
@@ -55,40 +54,34 @@ def train():
 
     # 构建网络
     model = network.Network(len(model_params['classes']), model_params['anchors'], is_train=True)
-    with tf.variable_scope('yolov3'):
-        logits = model.build_network(inputs)
+    logits = model.build_network(inputs)
 
     # 计算损失函数
     loss = model.calc_loss(logits, y_true)
-    l2_loss = tf.losses.get_regularization_loss()
 
-    restore_include = None
-    restore_exclude = ['yolov3/yolov3_head/Conv_14', 'yolov3/yolov3_head/Conv_6', 'yolov3/yolov3_head/Conv_22']
-    update_part = ['yolov3/yolov3_head']
-    saver_to_restore = tf.train.Saver(var_list=tf.contrib.framework.get_variables_to_restore(include=restore_include, exclude=restore_exclude))
-    update_vars = tf.contrib.framework.get_variables_to_restore(include=update_part)
+    # restore_include = None
+    # restore_exclude = ['yolov3/yolov3_head/Conv_14', 'yolov3/yolov3_head/Conv_6', 'yolov3/yolov3_head/Conv_22']
+    # update_part = ['yolov3/yolov3_head']
+    # saver_to_restore = tf.train.Saver(var_list=tf.contrib.framework.get_variables_to_restore(include=restore_include, exclude=restore_exclude))
+    # update_vars = tf.contrib.framework.get_variables_to_restore(include=update_part)
 
-    global_step = tf.Variable(float(0), trainable=False, collections=[tf.GraphKeys.LOCAL_VARIABLES])
+    global_step = tf.Variable(0, trainable=False)
     learning_rate = tf.train.exponential_decay(solver_params['lr'], global_step, solver_params['decay_steps'], solver_params['decay_rate'], staircase=True)
-    optimizer = tf.train.AdamOptimizer(learning_rate)
-    gvs = optimizer.compute_gradients(loss[0] + l2_loss, var_list=update_vars)
-    clip_grad_var = [gv if gv[0] is None else [tf.clip_by_norm(gv[0], 100.), gv[1]] for gv in gvs]
-    with tf.control_dependencies(clip_grad_var):
-        train_op = optimizer.apply_gradients(clip_grad_var, global_step=global_step)
+    optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
+    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    with tf.control_dependencies(update_ops):
+        train_op = optimizer.minimize(loss[0], global_step=global_step)
 
     tf.summary.scalar("learning_rate", learning_rate)
     tf.summary.scalar('total_loss', loss[0])
     tf.summary.scalar('loss_diou', loss[1])
     tf.summary.scalar('loss_conf', loss[2])
     tf.summary.scalar('loss_class', loss[3])
-    tf.summary.scalar('loss_l2', l2_loss)
-    tf.summary.scalar('loss_ratio', l2_loss / loss[0])
 
     # 配置tensorboard
     summary_op = tf.summary.merge_all()
     summary_writer = tf.summary.FileWriter(log_dir, graph=tf.get_default_graph(), flush_secs=60)
 
-    saver = tf.train.Saver()
     with tf.Session(config=config) as sess:
         sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])
 
@@ -103,7 +96,8 @@ def train():
                 print('Restoreing from {}'.format(ckpt.model_checkpoint_path))
             else:
                 print("Failed to find a checkpoint")
-        elif pre_train == True:
+
+        if pre_train == True:
             saver_to_restore.restore(sess, os.path.join(path_params['weights_dir'], 'yolov3.ckpt'))
 
         summary_writer.add_graph(sess.graph)
@@ -120,10 +114,9 @@ def train():
 
                 summary_writer.add_summary(summary_, global_step_)
 
-                train_epoch_loss, train_epoch_diou_loss, train_epoch_confs_loss, train_epoch_class_loss = np.mean(train_epoch_loss), np.mean(train_epoch_diou_loss), np.mean(train_epoch_confs_loss), np.mean(train_epoch_class_loss)
-
-                print("Epoch: {}, global_step: {}, lr: {:.8f}, total_loss: {:.3f}, diou_loss: {:.3f}, confs_loss: {:.3f}, class_loss: {:.3f}".format(epoch, global_step_, lr, train_epoch_loss, train_epoch_diou_loss, train_epoch_confs_loss, train_epoch_class_loss))
-                saver.save(sess, os.path.join(checkpoint_dir, checkpoints_name), global_step=epoch)
+            train_epoch_loss, train_epoch_diou_loss, train_epoch_confs_loss, train_epoch_class_loss = np.mean(train_epoch_loss), np.mean(train_epoch_diou_loss), np.mean(train_epoch_confs_loss), np.mean(train_epoch_class_loss)
+            print("Epoch: {}, global_step: {}, lr: {:.8f}, total_loss: {:.3f}, diou_loss: {:.3f}, confs_loss: {:.3f}, class_loss: {:.3f}".format(epoch, global_step_, lr, train_epoch_loss, train_epoch_diou_loss, train_epoch_confs_loss, train_epoch_class_loss))
+            saver_to_restore.save(sess, os.path.join(checkpoint_dir, checkpoints_name), global_step=epoch)
 
         sess.close()
 

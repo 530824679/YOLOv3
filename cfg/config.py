@@ -10,13 +10,13 @@ import os
 
 path_params = {
     'data_path': '/home/chenwei/HDD/Project/datasets/object_detection/VOC2028',
+    'pretrain_weights': '/home/chenwei/HDD/Project/CenterNet/weights/resnet34.npy',
     'checkpoints_dir': './checkpoints',
     'weights_dir': './weights',
     'logs_dir': './logs',
     'tfrecord_dir': './tfrecord',
     'checkpoints_name': 'model.ckpt',
     'train_tfrecord_name': 'train.tfrecord',
-    'test_tfrecord_name': 'test.tfrecord',
     'test_output_dir': './test'
 }
 
@@ -40,14 +40,13 @@ model_params = {
 
 solver_params = {
     'gpu': '0',                     # 使用的gpu索引
-    'lr': 1e-3,                     # 初始学习率
+    'lr': 1e-5,                     # 初始学习率
     'decay_steps': 5000,            # 衰变步数
     'decay_rate': 0.95,             # 衰变率
     'staircase': True,
-    'batch_size': 16,               # 每批次输入的数据个数
+    'batch_size': 8,               # 每批次输入的数据个数
     'total_epoches': 1000,          # 训练的最大迭代次数
     'save_step': 1000,              # 权重保存间隔
-    'log_step': 1000,               # 日志保存间隔
     'weight_decay': 0.0001,         # 正则化系数
     'restore': False,               # 支持restore
     'pre_train': True

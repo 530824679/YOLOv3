@@ -19,7 +19,6 @@ class TFRecord(object):
         self.data_path = path_params['data_path']
         self.tfrecord_dir = path_params['tfrecord_dir']
         self.train_tfrecord_name = path_params['train_tfrecord_name']
-        self.test_tfrecord_name = path_params['test_tfrecord_name']
         self.input_width = model_params['input_width']
         self.input_height = model_params['input_height']
         self.channels = model_params['channels']
@@ -62,7 +61,7 @@ class TFRecord(object):
                 if len(boxes) == 0:
                     continue
 
-                while boxes.shape[0] < 150:
+                while len(boxes) < 300:
                     boxes = np.append(boxes, [[0.0, 0.0, 0.0, 0.0, 0.0]], axis=0)
 
                 boxes = np.array(boxes, dtype=np.float32)
@@ -73,8 +72,8 @@ class TFRecord(object):
                     feature={
                         'image': tf.train.Feature(bytes_list=tf.train.BytesList(value=[image_string])),
                         'bbox': tf.train.Feature(bytes_list=tf.train.BytesList(value=[boxes_string])),
-                        'height': tf.train.Feature(int64_list=tf.train.Int64List(value=image_shape[0])),
-                        'width': tf.train.Feature(int64_list=tf.train.Int64List(value=image_shape[1])),
+                        'height': tf.train.Feature(int64_list=tf.train.Int64List(value=[image_shape[0]])),
+                        'width': tf.train.Feature(int64_list=tf.train.Int64List(value=[image_shape[1]])),
                     }))
                 writer.write(example.SerializeToString())
         writer.close()
@@ -117,7 +116,7 @@ class TFRecord(object):
         :return:
         """
         dataset = tf.data.TFRecordDataset(filenames)
-        dataset = dataset.map(self.parse_single_example, num_parallel_calls=4)
+        dataset = dataset.map(self.parse_single_example, num_parallel_calls=8)
         if is_shuffle:
             dataset = dataset.shuffle(batch_num)
         dataset = dataset.batch(batch_size)

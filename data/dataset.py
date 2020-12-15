@@ -81,16 +81,16 @@ class Dataset(object):
     def preprocess_data(self, image, boxes, input_height, input_width):
         image = np.array(image)
 
-        image, boxes = random_horizontal_flip(image, boxes)
-        image, labels = random_crop(image, boxes)
-        image, boxes = random_translate(image, boxes)
-        image = random_color_distort(image)
+        #image, boxes = random_horizontal_flip(image, boxes)
+        #image, boxes = random_crop(image, boxes)
+        #image, boxes = random_translate(image, boxes)
+        #image = random_color_distort(image)
 
         image_rgb = cv2.cvtColor(np.copy(image), cv2.COLOR_BGR2RGB).astype(np.float32)
-        image_rgb, labels = letterbox_resize(image_rgb, (input_height, input_width), np.copy(labels), interp=0)
+        image_rgb, boxes = letterbox_resize(image_rgb, (input_height, input_width), np.copy(boxes), interp=0)
         image_norm = image_rgb / 255.
 
-        # labels 去除空标签
+        # boxes 去除空标签
         valid = (np.sum(boxes, axis=-1) > 0).tolist()
         boxes = boxes[valid]
 
@@ -117,10 +117,6 @@ class Dataset(object):
         anchors = np.array(anchors)
         anchor_mask = [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
         feature_map_sizes = [input_shape // 32, input_shape // 16, input_shape // 8]
-
-        # labels 去除空标签
-        valid = (np.sum(labels, axis=-1) > 0).tolist()
-        labels = labels[valid]
 
         y_true_13 = np.zeros(shape=[feature_map_sizes[0][0], feature_map_sizes[0][1], 3, 5 + num_classes], dtype=np.float32)
         y_true_26 = np.zeros(shape=[feature_map_sizes[1][0], feature_map_sizes[1][1], 3, 5 + num_classes], dtype=np.float32)
@@ -155,7 +151,7 @@ class Dataset(object):
         iou = intersect_area / (box_area + anchor_area - intersect_area + 1e-10)
 
         # Find best anchor for each true box [N]
-        best_anchor = np.argmax(iou, axis=-1)
+        best_anchor = np.argmax(iou, axis=1)
 
         ratio_dict = {1.: 8., 2.: 16., 3.: 32.}
         for n, idx in enumerate(best_anchor):
@@ -168,17 +164,10 @@ class Dataset(object):
             j = int(np.floor(true_boxes[n, 1] / ratio))
             k = anchor_mask[feature_map_group].index(idx)
             c = labels[n][4].astype('int32')
-            #print(feature_map_group, '|', j, i, k, c)
-
-            # smooth labels
-            onehot = np.zeros(self.class_num, dtype=np.float)
-            onehot[c] = 1.0
-            uniform_distribution = np.full(self.class_num, 1.0 / self.class_num)
-            deta = 0.01
-            smooth_onehot = onehot * (1 - deta) + deta * uniform_distribution
+            #print(feature_map_group, '|', j, i, k, c, n, idx, true_boxes[n, 0], true_boxes[n, 1], ratio)
 
             y_true[feature_map_group][j, i, k, 0:4] = true_boxes[n, 0:4]
             y_true[feature_map_group][j, i, k, 4] = 1
-            y_true[feature_map_group][j, i, k, 5:] = smooth_onehot
+            y_true[feature_map_group][j, i, k, 5 + c] = 1
 
         return y_true_13, y_true_26, y_true_52
