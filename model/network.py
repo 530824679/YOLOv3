@@ -268,8 +268,8 @@ class Network(object):
 
         # predicts
         xy_cell, bboxes_xywh, pred_conf_logits, pred_prob_logits = self.reorg_layer(logits, anchors)
-        pred_box_xy = bboxes_xywh[:, :, :, :, 0:2]
-        pred_box_wh = bboxes_xywh[:, :, :, :, 2:4]
+        pred_box_xy = bboxes_xywh[..., 0:2]
+        pred_box_wh = bboxes_xywh[..., 2:4]
 
         # calc iou 计算每个pre_boxe与所有true_boxe的交并比.
         # valid_true_box_xx: [V,2]
@@ -284,7 +284,7 @@ class Network(object):
 
         # shape: [N, 13, 13, 3, 1]
         box_loss_scale = 2. - (1.0 * y_true[..., 2:3] / tf.cast(self.input_size[1], tf.float32)) * (1.0 * y_true[..., 3:4] / tf.cast(self.input_size[0], tf.float32))
-        diou = tf.expand_dims(self.bbox_diou(bboxes_xywh, object_coords), axis=-1)
+        diou = tf.expand_dims(self.box_ciou(bboxes_xywh, object_coords), axis=-1)
         diou_loss = object_masks * box_loss_scale * (1 - diou)
 
         # shape: [N, 13, 13, 3, 1]
@@ -342,7 +342,7 @@ class Network(object):
         # shape: [1, V]
         true_box_area = true_box_wh[..., 0] * true_box_wh[..., 1]  # 真实区域面积
         # [N, 13, 13, 3, V]
-        iou = intersect_area / (pred_box_area + true_box_area - intersect_area)
+        iou = intersect_area / (pred_box_area + true_box_area - intersect_area + 1e-10)
 
         return iou
 
@@ -376,7 +376,7 @@ class Network(object):
         inter_area = inter_section[..., 0] * inter_section[..., 1]
 
         # calculate union area
-        union_area = boxes_1_area + boxes_2_area - inter_area
+        union_area = boxes_1_area + boxes_2_area - inter_area + 1e-10
 
         # calculate iou
         iou = inter_area / union_area
@@ -416,7 +416,7 @@ class Network(object):
         union_area = boxes_1_area + boxes_2_area - inter_area
 
         # calculate iou
-        iou = inter_area / union_area
+        iou = inter_area / union_area + 1e-10
 
         # calculate the upper left and lower right corners of the minimum closed convex surface
         enclose_left_up = tf.minimum(boxes_1[..., :2], boxes_2[..., :2])
@@ -429,7 +429,7 @@ class Network(object):
         enclose_area = enclose_wh[..., 0] * enclose_wh[..., 1]
 
         # calculate the giou
-        giou = iou - 1.0 * (enclose_area - union_area) / enclose_area
+        giou = iou - 1.0 * (enclose_area - union_area) / enclose_area + 1e-10
 
         return giou
 
@@ -469,7 +469,7 @@ class Network(object):
         union_area = boxes_1_area + boxes_2_area - inter_area
 
         # calculate iou
-        iou = inter_area / union_area
+        iou = inter_area / union_area + 1e-10
 
         # calculate the upper left and lower right corners of the minimum closed convex surface
         enclose_left_up = tf.minimum(boxes_1[..., :2], boxes_2[..., :2])
@@ -482,7 +482,7 @@ class Network(object):
         enclose_diagonal = tf.reduce_sum(tf.square(enclose_wh), axis=-1)
 
         # calculate diou
-        diou = iou - 1.0 * center_distance / enclose_diagonal
+        diou = iou - 1.0 * center_distance / enclose_diagonal + 1e-10
 
         return diou
 
@@ -524,7 +524,7 @@ class Network(object):
         union_area = boxes_1_area + boxes_2_area - inter_area
 
         # calculate iou
-        iou = inter_area / union_area
+        iou = inter_area / union_area + 1e-10
 
         # calculate the upper left and lower right corners of the minimum closed convex surface
         enclose_left_up = tf.minimum(boxes_1[..., :2], boxes_2[..., :2])
@@ -537,7 +537,7 @@ class Network(object):
         enclose_diagonal = tf.reduce_sum(tf.square(enclose_wh), axis=-1)
 
         # calculate diou
-        diou = iou - 1.0 * center_distance / enclose_diagonal
+        diou = iou - 1.0 * center_distance / enclose_diagonal + 1e-10
 
         # calculate param v and alpha to CIoU
         alpha = v / (1.0 - iou + v)

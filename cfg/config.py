@@ -14,7 +14,7 @@ path_params = {
     'checkpoints_dir': './checkpoints',
     'weights_dir': './weights',
     'logs_dir': './logs',
-    'tfrecord_dir': './tfrecord',
+    'tfrecord_dir': '/home/chenwei/HDD/Project/YOLOv2/tfrecord',#'./tfrecord',
     'checkpoints_name': 'model.ckpt',
     'train_tfrecord_name': 'train.tfrecord',
     'test_output_dir': './test'
@@ -28,7 +28,7 @@ model_params = {
     'anchors': [[11,13], [15,17], [17,21],
                [22,25], [27,32], [37,43],
                [57,65], [104,121], [229,266]],
-    'classes': ['person', 'hat'],  # 类别
+    'classes': ['person'],#, 'hat'],  # 类别
     'anchor_per_scale': 3,                              # 每个尺度的anchor个数
     'upsample_method': "resize",                        # 上采样的方式
     'iou_threshold': 0.5,
@@ -41,7 +41,7 @@ model_params = {
 
 solver_params = {
     'gpu': '0',                     # 使用的gpu索引
-    'lr': 1e-5,                     # 初始学习率
+    'lr': 1e-4,                     # 初始学习率
     'decay_steps': 5000,            # 衰变步数
     'decay_rate': 0.95,             # 衰变率
     'staircase': True,
@@ -50,7 +50,7 @@ solver_params = {
     'save_step': 1000,              # 权重保存间隔
     'weight_decay': 0.0001,         # 正则化系数
     'restore': False,               # 支持restore
-    'pre_train': True
+    'pre_train': False
 }
 
 test_params = {
@@ -59,4 +59,4 @@ test_params = {
     'max_output_size': 10           # nms选择的边界框最大数量
 }
 
-classes_map = {0: 'persion', 1: 'hat'}
+classes_map = {0: 'persion'}#, 1: 'hat'}
